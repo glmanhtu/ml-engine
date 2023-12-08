@@ -142,7 +142,6 @@ class Trainer:
         logger.info("Start training...")
         start_time = time.time()
         for epoch in range(self.cfg.train.start_epoch, self.cfg.train.epochs):
-            self.model.train()
             self.train_one_epoch(epoch, data_loader, optimizer, lr_scheduler, loss_scaler, criterion)
 
             if dist.get_rank() == 0 and (epoch % self.cfg.save_freq == 0 or epoch == (self.cfg.train.epochs - 1)):
@@ -151,7 +150,6 @@ class Trainer:
                 self.save_state_dict(lr_scheduler.state_dict(), 'models:/lr_scheduler/latest')
                 self.save_state_dict(loss_scaler.state_dict(), 'models:/lost_scaler/latest')
 
-            self.model.eval()
             loss = self.validate()
             self.log_metrics({'val_loss': loss})
 
@@ -175,6 +173,7 @@ class Trainer:
         return samples, targets
 
     def train_one_epoch(self, epoch, data_loader, optimizer, lr_scheduler, loss_scaler, criterion):
+        self.model.train()
         optimizer.zero_grad()
         data_loader.sampler.set_epoch(epoch)
         num_steps = len(data_loader)
@@ -250,6 +249,7 @@ class Trainer:
 
     @torch.no_grad()
     def validate(self, mode='validation'):
+        self.model.eval()
         dataset = self.load_dataset(mode, self.cfg.data, self.get_transform(mode, self.cfg.data))
         data_loader = self.get_dataloader(mode, dataset, self.cfg.data, repeat=1)
         return self.validate_one_epoch(data_loader)
