@@ -72,10 +72,10 @@ class Trainer:
     def build_model(self, model_conf):
         raise NotImplementedError()
 
-    def get_transforms(self):
+    def get_transform(self, mode):
         raise NotImplementedError()
 
-    def load_dataset(self, mode, data_conf):
+    def load_dataset(self, mode, data_conf, transform):
         raise NotImplementedError()
 
     def get_dataloader(self, mode, dataset, repeat):
@@ -111,7 +111,7 @@ class Trainer:
         return data_loader
 
     def train(self, ref_lr_bs=256., mode='train'):
-        dataset = self.load_dataset(mode, self.cfg.data)
+        dataset = self.load_dataset(mode, self.cfg.data, self.get_transform(mode))
         data_loader = self.get_dataloader(mode, dataset, self.cfg.data.repeat)
 
         # linear scale the learning rate according to total batch size, may not be optimal
@@ -142,6 +142,7 @@ class Trainer:
         logger.info("Start training...")
         start_time = time.time()
         for epoch in range(self.cfg.train.start_epoch, self.cfg.train.epochs):
+            self.model.train()
             self.train_one_epoch(epoch, data_loader, optimizer, lr_scheduler, loss_scaler, criterion)
 
             if dist.get_rank() == 0 and (epoch % self.cfg.save_freq == 0 or epoch == (self.cfg.train.epochs - 1)):
@@ -149,7 +150,7 @@ class Trainer:
                 self.save_state_dict(optimizer.state_dict(), 'models:/optimizer/latest')
                 self.save_state_dict(lr_scheduler.state_dict(), 'models:/lr_scheduler/latest')
                 self.save_state_dict(loss_scaler.state_dict(), 'models:/lost_scaler/latest')
-
+            self.model.eval()
             loss = self.validate()
             self.log_metrics({'val_loss': loss})
 
@@ -173,7 +174,6 @@ class Trainer:
         return samples, targets
 
     def train_one_epoch(self, epoch, data_loader, optimizer, lr_scheduler, loss_scaler, criterion):
-        self.model.train()
         optimizer.zero_grad()
         data_loader.sampler.set_epoch(epoch)
         num_steps = len(data_loader)
@@ -250,7 +250,7 @@ class Trainer:
 
     def throughput(self, mode='validation'):
         self.model.eval()
-        dataset = self.load_dataset(mode, self.cfg.data)
+        dataset = self.load_dataset(mode, self.cfg.data, self.get_transform(mode))
         data_loader = self.get_dataloader(mode, dataset, repeat=1)
         for idx, (images, _) in enumerate(data_loader):
             images = images.cuda(non_blocking=True)
