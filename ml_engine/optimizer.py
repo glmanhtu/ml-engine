@@ -22,6 +22,9 @@ def build_optimizer(train_conf, optimizer_conf, model):
     if opt_lower == 'sgd':
         optimizer = optim.SGD(parameters, momentum=optimizer_conf.momentum, nesterov=True,
                               lr=train_conf.base_lr, weight_decay=train_conf.weight_decay)
+    elif opt_lower == 'adam':
+        optimizer = optim.Adam(parameters, eps=optimizer_conf.eps, betas=optimizer_conf.betas,
+                                lr=train_conf.base_lr, weight_decay=train_conf.weight_decay)
     elif opt_lower == 'adamw':
         optimizer = optim.AdamW(parameters, eps=optimizer_conf.eps, betas=optimizer_conf.betas,
                                 lr=train_conf.base_lr, weight_decay=train_conf.weight_decay)

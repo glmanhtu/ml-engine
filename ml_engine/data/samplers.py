@@ -11,7 +11,7 @@ from ml_engine.utils import get_labels_to_indices
 logger = logging.getLogger(__name__)
 
 
-class DistributedRepeatSampler(DistributedSampler):
+class DistributedRepeatableSampler(DistributedSampler):
 
     def __init__(self, dataset: Dataset, num_replicas: Optional[int] = None,
                  rank: Optional[int] = None, shuffle: bool = True,
@@ -52,7 +52,7 @@ class DistributedRepeatSampler(DistributedSampler):
         return self.num_samples * self.repeat
 
 
-class SubsetRandomSampler(torch.utils.data.Sampler):
+class SubsetRandomSampler(Sampler):
     r"""Samples elements randomly from a given list of indices, without replacement.
 
     Arguments:
@@ -60,6 +60,7 @@ class SubsetRandomSampler(torch.utils.data.Sampler):
     """
 
     def __init__(self, indices):
+        super().__init__()
         self.epoch = 0
         self.indices = indices
 
@@ -73,7 +74,7 @@ class SubsetRandomSampler(torch.utils.data.Sampler):
         self.epoch = epoch
 
 
-class DistributedEvalSampler(Sampler):
+class DistributedRepeatableEvalSampler(Sampler):
     r"""
     Adapted from https://github.com/SeungjunNah/DeepDeblur-PyTorch/blob/master/src/data/sampler.py
     DistributedEvalSampler is different from DistributedSampler.
@@ -119,6 +120,7 @@ class DistributedEvalSampler(Sampler):
     """
 
     def __init__(self, dataset, num_replicas=None, rank=None, shuffle=False, seed=0, repeat=1):
+        super().__init__()
         if num_replicas is None:
             if not dist.is_available():
                 raise RuntimeError("Requires distributed package to be available")
@@ -180,7 +182,11 @@ class DistributedEvalSampler(Sampler):
 
 
 class MPerClassSampler(Sampler):
+    """
+    Sample maximum M items per class, depending on the size of current class
+    """
     def __init__(self, labels, m, batch_size=None, length_before_new_iter=100000):
+        super().__init__()
         if isinstance(labels, torch.Tensor):
             labels = labels.numpy()
         self.m_per_class = int(m)

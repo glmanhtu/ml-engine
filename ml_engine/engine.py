@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from ml_engine import utils
 from ml_engine.lr_scheduler import build_scheduler
 from ml_engine.optimizer import build_optimizer
-from ml_engine.data.samplers import DistributedRepeatSampler, DistributedEvalSampler
+from ml_engine.data.samplers import DistributedRepeatableSampler, DistributedRepeatableEvalSampler
 from ml_engine.utils import get_ddp_config, NativeScalerWithGradNormCount
 from ml_engine.evaluation.metrics import AverageMeter
 
@@ -23,36 +23,36 @@ logger = logging.getLogger(__name__)
 
 class Trainer:
     def __init__(self, cfg: DictConfig):
-        self.cfg = cfg
+        self._cfg = cfg
         self.local_rank, self.rank, self.world_size = get_ddp_config()
-        seed = self.cfg.seed + self.rank
+        seed = self._cfg.seed + self.rank
         utils.set_seed(seed)
         cudnn.benchmark = True
 
-        logger.info(f"Creating model: {self.cfg.model.type}/{self.cfg.model.name}")
-        model = self.build_model(self.cfg.model)
+        logger.info(f"Creating model: {self._cfg.model.type}/{self._cfg.model.name}")
+        model = self.build_model(self._cfg.model)
 
         n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
         logger.info(f"Number of params: {n_parameters}")
 
-        if self.cfg.model.pretrained:
-            state_dict = self.get_state_dict(self.cfg.model.pretrained)
+        if self._cfg.model.pretrained:
+            state_dict = self.get_state_dict(self._cfg.model.pretrained)
             model.load_state_dict(state_dict)
 
-        if self.cfg.train.resume:
+        if self._cfg.train.resume:
             run = mlflow.active_run()
             run_data = run.data.to_dictionary()
-            self.cfg.train.start_epoch = run_data['params']['epoch'] + 1
+            self._cfg.train.start_epoch = run_data['params']['epoch'] + 1
             self.__step = run_data['params']['current_step']
-            self.__min_loss = run_data['params']['min_loss']
+            self._min_loss = run_data['params']['min_loss']
 
         model.cuda()
         model_wo_ddp = model
         model = DistributedDataParallel(model, device_ids=[self.local_rank], broadcast_buffers=False)
 
-        self.__min_loss = 99999
-        self.model = model
-        self.model_wo_ddp = model_wo_ddp
+        self._min_loss = 99999
+        self._model = model
+        self._model_wo_ddp = model_wo_ddp
         self.__step = 0
         self.data_loader_registers = {}
 
@@ -85,7 +85,7 @@ class Trainer:
         num_tasks = self.world_size
         global_rank = self.rank
         if mode == 'train':
-            sampler = DistributedRepeatSampler(
+            sampler = DistributedRepeatableSampler(
                 dataset, num_replicas=num_tasks, rank=global_rank, shuffle=True, repeat=repeat)
 
             data_loader = DataLoader(
@@ -96,8 +96,8 @@ class Trainer:
                 drop_last=True,
             )
         else:
-            sampler = DistributedEvalSampler(dataset, shuffle=False, rank=global_rank, num_replicas=num_tasks,
-                                             repeat=repeat)
+            sampler = DistributedRepeatableEvalSampler(dataset, shuffle=False, rank=global_rank, num_replicas=num_tasks,
+                                                       repeat=repeat)
 
             data_loader = torch.utils.data.DataLoader(
                 dataset, sampler=sampler,
@@ -111,41 +111,41 @@ class Trainer:
         return data_loader
 
     def train(self, ref_lr_bs=256., mode='train'):
-        dataset = self.load_dataset(mode, self.cfg.data, self.get_transform(mode, self.cfg.data))
-        data_loader = self.get_dataloader(mode, dataset, self.cfg.data, self.cfg.data.repeat)
+        dataset = self.load_dataset(mode, self._cfg.data, self.get_transform(mode, self._cfg.data))
+        data_loader = self.get_dataloader(mode, dataset, self._cfg.data, self._cfg.data.repeat)
 
         # linear scale the learning rate according to total batch size, may not be optimal
-        batch_size = self.cfg.data.batch_size * dist.get_world_size()
-        self.cfg.train.base_lr = self.cfg.train.base_lr * batch_size / ref_lr_bs
-        self.cfg.lr_scheduler.warmup_lr = self.cfg.lr_scheduler.warmup_lr * batch_size / ref_lr_bs
-        self.cfg.lr_scheduler.min_lr = self.cfg.lr_scheduler.min_lr * batch_size / ref_lr_bs
+        batch_size = self._cfg.data.batch_size * dist.get_world_size()
+        self._cfg.train.base_lr = self._cfg.train.base_lr * batch_size / ref_lr_bs
+        self._cfg.lr_scheduler.warmup_lr = self._cfg.lr_scheduler.warmup_lr * batch_size / ref_lr_bs
+        self._cfg.lr_scheduler.min_lr = self._cfg.lr_scheduler.min_lr * batch_size / ref_lr_bs
 
         # gradient accumulation also need to scale the learning rate
-        if self.cfg.train.accumulation_steps > 1:
-            self.cfg.train.base_lr = self.cfg.train.base_lr * self.cfg.train.accumulation_steps
-            self.cfg.lr_scheduler.warmup_lr = self.cfg.lr_scheduler.warmup_lr * self.cfg.train.accumulation_steps
-            self.cfg.lr_scheduler.min_lr = self.cfg.lr_scheduler.min_lr * self.cfg.train.accumulation_steps
+        if self._cfg.train.accumulation_steps > 1:
+            self._cfg.train.base_lr = self._cfg.train.base_lr * self._cfg.train.accumulation_steps
+            self._cfg.lr_scheduler.warmup_lr = self._cfg.lr_scheduler.warmup_lr * self._cfg.train.accumulation_steps
+            self._cfg.lr_scheduler.min_lr = self._cfg.lr_scheduler.min_lr * self._cfg.train.accumulation_steps
 
-        optimizer = build_optimizer(self.cfg.train, self.cfg.optimizer, self.model_wo_ddp)
+        optimizer = build_optimizer(self._cfg.train, self._cfg.optimizer, self._model_wo_ddp)
         loss_scaler = NativeScalerWithGradNormCount()
-        lr_scheduler = build_scheduler(self.cfg.lr_scheduler, self.cfg.train.epochs, optimizer,
-                                       len(data_loader) // self.cfg.train.accumulation_steps)
+        lr_scheduler = build_scheduler(self._cfg.lr_scheduler, self._cfg.train.epochs, optimizer,
+                                       len(data_loader) // self._cfg.train.accumulation_steps)
 
         criterion = self.get_criterion()
 
-        if self.cfg.train.resume:
-            self.resume_state_dict(self.model_wo_ddp, 'models:/model/latest')
+        if self._cfg.train.resume:
+            self.resume_state_dict(self._model_wo_ddp, 'models:/model/latest')
             self.resume_state_dict(optimizer, 'models:/optimizer/latest')
             self.resume_state_dict(lr_scheduler, 'models:/lr_scheduler/latest')
             self.resume_state_dict(loss_scaler, 'models:/lost_scaler/latest')
 
         logger.info("Start training...")
         start_time = time.time()
-        for epoch in range(self.cfg.train.start_epoch, self.cfg.train.epochs):
+        for epoch in range(self._cfg.train.start_epoch, self._cfg.train.epochs):
             self.train_one_epoch(epoch, data_loader, optimizer, lr_scheduler, loss_scaler, criterion)
 
-            if dist.get_rank() == 0 and (epoch % self.cfg.save_freq == 0 or epoch == (self.cfg.train.epochs - 1)):
-                self.save_state_dict(self.model_wo_ddp.state_dict(), 'models:/model/latest')
+            if self.rank == 0 and (epoch % self._cfg.save_freq == 0 or epoch == (self._cfg.train.epochs - 1)):
+                self.save_state_dict(self._model_wo_ddp.state_dict(), 'models:/model/latest')
                 self.save_state_dict(optimizer.state_dict(), 'models:/optimizer/latest')
                 self.save_state_dict(lr_scheduler.state_dict(), 'models:/lr_scheduler/latest')
                 self.save_state_dict(loss_scaler.state_dict(), 'models:/lost_scaler/latest')
@@ -153,13 +153,13 @@ class Trainer:
             loss = self.validate()
             self.log_metrics({'val_loss': loss})
 
-            if loss < self.__min_loss:
-                self.save_state_dict(self.model_wo_ddp, 'models:/model/best')
+            if loss < self._min_loss:
+                self.save_state_dict(self._model_wo_ddp, 'models:/model/best')
 
-            self.__min_loss = min(self.__min_loss, loss)
+            self._min_loss = min(self._min_loss, loss)
             mlflow.log_param('epoch', epoch)
             mlflow.log_param('current_step', self.__step)
-            mlflow.log_param('min_loss', self.__min_loss)
+            mlflow.log_param('min_loss', self._min_loss)
 
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -167,20 +167,17 @@ class Trainer:
 
     def train_step(self, samples):
         self.__step += 1
-        return self.model(samples)
+        return self._model(samples)
 
     def prepare_data(self, samples, targets):
         return samples, targets
 
     def train_one_epoch(self, epoch, data_loader, optimizer, lr_scheduler, loss_scaler, criterion):
-        self.model.train()
+        self._model.train()
         optimizer.zero_grad()
         data_loader.sampler.set_epoch(epoch)
-        num_steps = len(data_loader)
         batch_time = AverageMeter()
-        loss_meter = AverageMeter()
-        norm_meter = AverageMeter()
-        scaler_meter = AverageMeter()
+        loss_meter, norm_meter, scaler_meter = AverageMeter(), AverageMeter(), AverageMeter()
 
         start = time.time()
         end = time.time()
@@ -189,26 +186,26 @@ class Trainer:
             targets = targets.cuda(non_blocking=True)
 
             samples, targets = self.prepare_data(samples, targets)
-            with torch.cuda.amp.autocast(enabled=self.cfg.amp_enable):
+            with torch.cuda.amp.autocast(enabled=self._cfg.amp_enable):
                 outputs = self.train_step(samples)
 
             loss = criterion(outputs, targets)
-            loss = loss / self.cfg.train.accumulation_steps
+            loss = loss / self._cfg.train.accumulation_steps
 
             # this attribute is added by timm on one optimizer (adahessian)
             is_second_order = hasattr(optimizer, 'is_second_order') and optimizer.is_second_order
-            grad_norm = loss_scaler(loss, optimizer, clip_grad=self.cfg.train.clip_grad,
-                                    parameters=self.model.parameters(), create_graph=is_second_order,
-                                    update_grad=(idx + 1) % self.cfg.train.accumulation_steps == 0)
+            grad_norm = loss_scaler(loss, optimizer, clip_grad=self._cfg.train.clip_grad,
+                                    parameters=self._model.parameters(), create_graph=is_second_order,
+                                    update_grad=(idx + 1) % self._cfg.train.accumulation_steps == 0)
 
-            if (idx + 1) % self.cfg.train.accumulation_steps == 0:
+            if (idx + 1) % self._cfg.train.accumulation_steps == 0:
                 optimizer.zero_grad()
-                lr_scheduler.step_update((epoch * num_steps + idx) // self.cfg.train.accumulation_steps)
+                lr_scheduler.step_update((epoch * len(data_loader) + idx) // self._cfg.train.accumulation_steps)
             loss_scale_value = loss_scaler.state_dict()["scale"]
 
             torch.cuda.synchronize()
 
-            loss_meter.update(loss.item() * self.cfg.train.accumulation_steps, targets.size(0))
+            loss_meter.update(loss.item() * self._cfg.train.accumulation_steps, targets.size(0))
             if grad_norm is not None:  # loss_scaler return None if not update
                 norm_meter.update(grad_norm)
 
@@ -216,13 +213,13 @@ class Trainer:
             batch_time.update(time.time() - end)
             end = time.time()
 
-            if idx % self.cfg.print_freq == 0:
+            if idx % self._cfg.print_freq == 0:
                 lr = optimizer.param_groups[0]['lr']
                 wd = optimizer.param_groups[0]['weight_decay']
                 memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
-                etas = batch_time.avg * (num_steps - idx)
+                etas = batch_time.avg * (len(data_loader) - idx)
                 logger.info(
-                    f'Train: [{epoch}/{self.cfg.train.epochs}][{idx}/{num_steps}]\t'
+                    f'Train: [{epoch}/{self._cfg.train.epochs}][{idx}/{len(data_loader)}]\t'
                     f'eta {datetime.timedelta(seconds=int(etas))} lr {lr:.6f}\t wd {wd:.4f}\t'
                     f'time {batch_time.val:.4f} ({batch_time.avg:.4f})\t'
                     f'loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t'
@@ -249,25 +246,25 @@ class Trainer:
 
     @torch.no_grad()
     def validate(self, mode='validation'):
-        self.model.eval()
-        dataset = self.load_dataset(mode, self.cfg.data, self.get_transform(mode, self.cfg.data))
-        data_loader = self.get_dataloader(mode, dataset, self.cfg.data, repeat=1)
+        self._model.eval()
+        dataset = self.load_dataset(mode, self._cfg.data, self.get_transform(mode, self._cfg.data))
+        data_loader = self.get_dataloader(mode, dataset, self._cfg.data, repeat=1)
         return self.validate_one_epoch(data_loader)
 
     def throughput(self, mode='validation'):
-        self.model.eval()
-        dataset = self.load_dataset(mode, self.cfg.data, self.get_transform(mode, self.cfg.data))
-        data_loader = self.get_dataloader(mode, dataset, self.cfg.data, repeat=1)
+        self._model.eval()
+        dataset = self.load_dataset(mode, self._cfg.data, self.get_transform(mode, self._cfg.data))
+        data_loader = self.get_dataloader(mode, dataset, self._cfg.data, repeat=1)
         for idx, (images, _) in enumerate(data_loader):
             images = images.cuda(non_blocking=True)
             batch_size = images.shape[0]
             for i in range(50):
-                self.model(images)
+                self._model(images)
             torch.cuda.synchronize()
             logger.info(f"throughput averaged with 30 times")
             tic1 = time.time()
             for i in range(30):
-                self.model(images)
+                self._model(images)
             torch.cuda.synchronize()
             tic2 = time.time()
             throughput_val = 30 * batch_size / (tic2 - tic1)
