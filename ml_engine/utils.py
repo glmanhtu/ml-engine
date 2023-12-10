@@ -136,6 +136,12 @@ def get_ddp_config():
         rank = int(os.environ['SLURM_PROCID'])
         local_rank = rank % torch.cuda.device_count()
 
+    if 'MASTER_ADDR' not in os.environ:
+        os.environ['MASTER_ADDR'] = 'localhost'
+
+    if 'MASTER_PORT' not in os.environ:
+        os.environ['MASTER_PORT'] = '12355'
+
     logger.info(f"RANK and WORLD_SIZE in environ: {rank}/{world_size}")
     torch.cuda.set_device(local_rank)
     torch.distributed.init_process_group(backend='nccl', init_method='env://', world_size=world_size, rank=rank)
