@@ -147,6 +147,7 @@ class Trainer:
 
             if loss < self._min_loss:
                 self._tracker.log_state_dict(self._model_wo_ddp.state_dict(), 'models:/model/best')
+                self.log_metrics({'best_loss': loss})
                 logger.info(f"Loss is reduced from {self._min_loss} to {loss}")
 
             self._min_loss = min(self._min_loss, loss)
