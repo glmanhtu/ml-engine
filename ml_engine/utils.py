@@ -17,8 +17,6 @@ import torch.distributed as dist
 from omegaconf import DictConfig, ListConfig
 from torch import inf
 
-logger = logging.getLogger(__name__)
-
 
 def get_grad_norm(parameters, norm_type=2):
     if isinstance(parameters, torch.Tensor):
@@ -143,7 +141,6 @@ def get_ddp_config():
     if 'MASTER_PORT' not in os.environ:
         os.environ['MASTER_PORT'] = str(random.randint(10000, 65000))
 
-    logger.info(f"RANK and WORLD_SIZE in environ: {rank}/{world_size}")
     torch.cuda.set_device(local_rank)
     torch.distributed.init_process_group(backend='nccl', init_method='env://', world_size=world_size, rank=rank)
     torch.distributed.barrier()

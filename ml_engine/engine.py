@@ -11,6 +11,7 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
 
 from ml_engine import utils
+from ml_engine.logger import create_logger
 from ml_engine.lr_scheduler import build_scheduler
 from ml_engine.optimizer import build_optimizer
 from ml_engine.data.samplers import DistributedRepeatableSampler, DistributedRepeatableEvalSampler
@@ -18,23 +19,24 @@ from ml_engine.tracking.tracker import Tracker
 from ml_engine.utils import get_ddp_config, NativeScalerWithGradNormCount, extract_params_from_omegaconf_dict
 from ml_engine.evaluation.metrics import AverageMeter
 
-logger = logging.getLogger(__name__)
-
 
 class Trainer:
     def __init__(self, cfg: DictConfig, tracker: Tracker):
         self._cfg = cfg
         self._tracker = tracker
         self.local_rank, self.rank, self.world_size = get_ddp_config()
+        self.logger = create_logger(cfg.log_dir, self.rank, cfg.run.name, cfg.mode)
+        self.logger.info(f"RANK and WORLD_SIZE in environ: {self.rank}/{self.world_size}")
+
         seed = self._cfg.seed + self.rank
         utils.set_seed(seed)
         cudnn.benchmark = True
 
-        logger.info(f"Creating model {self._cfg.model.type}")
+        self.logger.info(f"Creating model {self._cfg.model.type}")
         model = self.build_model(self._cfg.model)
 
         n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        logger.info(f"Number of params: {n_parameters}")
+        self.logger.info(f"Number of params: {n_parameters}")
 
         if self._cfg.model.pretrained:
             state_dict = self._tracker.get_state_dict(self._cfg.model.pretrained)
@@ -53,7 +55,7 @@ class Trainer:
     def resume_state_dict(self, module, artifact_path):
         state_dict = self._tracker.get_state_dict(artifact_path)
         module.load_state_dict(state_dict)
-        logger.info(f'State dict {artifact_path} is loaded')
+        self.logger.info(f'State dict {artifact_path} is loaded')
 
     def build_model(self, model_conf):
         raise NotImplementedError()
@@ -131,7 +133,7 @@ class Trainer:
             self.resume_state_dict(lr_scheduler, 'models:/lr_scheduler/latest')
             self.resume_state_dict(loss_scaler, 'models:/lost_scaler/latest')
 
-        logger.info("Start training...")
+        self.logger.info("Start training...")
         start_time = time.time()
         for epoch in range(self._cfg.train.start_epoch, self._cfg.train.epochs):
             self.train_one_epoch(epoch, data_loader, optimizer, lr_scheduler, loss_scaler, criterion)
@@ -148,14 +150,14 @@ class Trainer:
             if loss < self._min_loss:
                 self._tracker.log_state_dict(self._model_wo_ddp.state_dict(), 'models:/model/best')
                 self.log_metrics({'best_loss': loss})
-                logger.info(f"Loss is reduced from {self._min_loss} to {loss}")
+                self.logger.info(f"Loss is reduced from {self._min_loss} to {loss}")
 
             self._min_loss = min(self._min_loss, loss)
             self.log_metrics({'epoch': epoch})
 
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-        logger.info('Training time {}'.format(total_time_str))
+        self.logger.info('Training time {}'.format(total_time_str))
 
     def train_step(self, samples):
         self.__step += 1
@@ -210,7 +212,7 @@ class Trainer:
                 wd = optimizer.param_groups[0]['weight_decay']
                 memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
                 etas = batch_time.avg * (len(data_loader) - idx)
-                logger.info(
+                self.logger.info(
                     f'Train: [{epoch}/{self._cfg.train.epochs}][{idx}/{len(data_loader)}]\t'
                     f'eta {datetime.timedelta(seconds=int(etas))} lr {lr:.6f}\t wd {wd:.4f}\t'
                     f'time {batch_time.val:.4f} ({batch_time.avg:.4f})\t'
@@ -222,7 +224,7 @@ class Trainer:
                 self.log_metrics({'train_loss': loss_meter.val})
 
         epoch_time = time.time() - start
-        logger.info(f"EPOCH {epoch} training takes {datetime.timedelta(seconds=int(epoch_time))}")
+        self.logger.info(f"EPOCH {epoch} training takes {datetime.timedelta(seconds=int(epoch_time))}")
 
         loss_meter.all_reduce()
         return loss_meter.avg
@@ -253,12 +255,12 @@ class Trainer:
             for i in range(50):
                 self._model(images)
             torch.cuda.synchronize()
-            logger.info(f"throughput averaged with 30 times")
+            self.logger.info(f"throughput averaged with 30 times")
             tic1 = time.time()
             for i in range(30):
                 self._model(images)
             torch.cuda.synchronize()
             tic2 = time.time()
             throughput_val = 30 * batch_size / (tic2 - tic1)
-            logger.info(f"batch_size {batch_size} throughput {throughput_val}")
+            self.logger.info(f"batch_size {batch_size} throughput {throughput_val}")
             return throughput_val
