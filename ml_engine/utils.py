@@ -141,7 +141,7 @@ def get_ddp_config():
         os.environ['MASTER_ADDR'] = 'localhost'
 
     if 'MASTER_PORT' not in os.environ:
-        os.environ['MASTER_PORT'] = '12355'
+        os.environ['MASTER_PORT'] = str(random.randint(10000, 65000))
 
     logger.info(f"RANK and WORLD_SIZE in environ: {rank}/{world_size}")
     torch.cuda.set_device(local_rank)
