@@ -79,3 +79,6 @@ class MLFlowTracker(Tracker):
 
     def log_artifact(self, local_file_path, artifact_path):
         mlflow.log_artifact(local_file_path, artifact_path)
+
+    def log_artifacts(self, local_dir: str, artifact_path: Optional[str] = None) -> None:
+        mlflow.log_artifacts(local_dir, artifact_path)

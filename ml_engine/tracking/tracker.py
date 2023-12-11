@@ -63,3 +63,6 @@ class Tracker(object):
 
     def log_artifact(self, local_file_path, artifact_path):
         raise NotImplementedError()
+
+    def log_artifacts(self, local_dir: str, artifact_path: Optional[str] = None) -> None:
+        raise NotImplementedError()
