@@ -3,7 +3,6 @@ import logging
 import time
 from typing import Dict
 
-import mlflow
 import torch
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
@@ -15,36 +14,31 @@ from ml_engine import utils
 from ml_engine.lr_scheduler import build_scheduler
 from ml_engine.optimizer import build_optimizer
 from ml_engine.data.samplers import DistributedRepeatableSampler, DistributedRepeatableEvalSampler
-from ml_engine.utils import get_ddp_config, NativeScalerWithGradNormCount
+from ml_engine.tracking.tracker import Tracker
+from ml_engine.utils import get_ddp_config, NativeScalerWithGradNormCount, extract_params_from_omegaconf_dict
 from ml_engine.evaluation.metrics import AverageMeter
 
 logger = logging.getLogger(__name__)
 
 
 class Trainer:
-    def __init__(self, cfg: DictConfig):
+    def __init__(self, cfg: DictConfig, tracker: Tracker):
         self._cfg = cfg
+        self._tracker = tracker
         self.local_rank, self.rank, self.world_size = get_ddp_config()
         seed = self._cfg.seed + self.rank
         utils.set_seed(seed)
         cudnn.benchmark = True
 
-        logger.info(f"Creating model: {self._cfg.model.type}/{self._cfg.model.name}")
+        logger.info(f"Creating model {self._cfg.model.type}")
         model = self.build_model(self._cfg.model)
 
         n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
         logger.info(f"Number of params: {n_parameters}")
 
         if self._cfg.model.pretrained:
-            state_dict = self.get_state_dict(self._cfg.model.pretrained)
+            state_dict = self._tracker.get_state_dict(self._cfg.model.pretrained)
             model.load_state_dict(state_dict)
-
-        if self._cfg.train.resume:
-            run = mlflow.active_run()
-            run_data = run.data.to_dictionary()
-            self._cfg.train.start_epoch = run_data['params']['epoch'] + 1
-            self.__step = run_data['params']['current_step']
-            self._min_loss = run_data['params']['min_loss']
 
         model.cuda()
         model_wo_ddp = model
@@ -56,18 +50,10 @@ class Trainer:
         self.__step = 0
         self.data_loader_registers = {}
 
-    def get_state_dict(self, model_path):
-        state_dict_uri = mlflow.get_artifact_uri(model_path)
-        return mlflow.pytorch.load_state_dict(state_dict_uri)
-
     def resume_state_dict(self, module, artifact_path):
-        state_dict = self.get_state_dict(artifact_path)
+        state_dict = self._tracker.get_state_dict(artifact_path)
         module.load_state_dict(state_dict)
         logger.info(f'State dict {artifact_path} is loaded')
-
-    def save_state_dict(self, state_dict, artifact_path):
-        mlflow.pytorch.log_state_dict(state_dict, artifact_path)
-        logger.info(f'State dict {artifact_path} is saved')
 
     def build_model(self, model_conf):
         raise NotImplementedError()
@@ -110,9 +96,15 @@ class Trainer:
         self.data_loader_registers[mode] = data_loader
         return data_loader
 
-    def train(self, ref_lr_bs=256., mode='train'):
+    def train(self, ref_lr_bs=256., mode='train', data_repeat=1):
+        if self._cfg.train.resume:
+            self._cfg.train.start_epoch = int(self._tracker.get_metric('epoch')[-1].value) + 1
+            self.__step = self._tracker.get_metric('train_loss')[-1].step
+            self._min_loss = min([x.value for x in self._tracker.get_metric('val_loss')])
+        else:
+            self._tracker.log_params(extract_params_from_omegaconf_dict(self._cfg))
         dataset = self.load_dataset(mode, self._cfg.data, self.get_transform(mode, self._cfg.data))
-        data_loader = self.get_dataloader(mode, dataset, self._cfg.data, self._cfg.data.repeat)
+        data_loader = self.get_dataloader(mode, dataset, self._cfg.data, data_repeat)
 
         # linear scale the learning rate according to total batch size, may not be optimal
         batch_size = self._cfg.data.batch_size * dist.get_world_size()
@@ -145,21 +137,19 @@ class Trainer:
             self.train_one_epoch(epoch, data_loader, optimizer, lr_scheduler, loss_scaler, criterion)
 
             if self.rank == 0 and (epoch % self._cfg.save_freq == 0 or epoch == (self._cfg.train.epochs - 1)):
-                self.save_state_dict(self._model_wo_ddp.state_dict(), 'models:/model/latest')
-                self.save_state_dict(optimizer.state_dict(), 'models:/optimizer/latest')
-                self.save_state_dict(lr_scheduler.state_dict(), 'models:/lr_scheduler/latest')
-                self.save_state_dict(loss_scaler.state_dict(), 'models:/lost_scaler/latest')
+                self._tracker.log_state_dict(self._model_wo_ddp.state_dict(), 'models:/model/latest')
+                self._tracker.log_state_dict(optimizer.state_dict(), 'models:/optimizer/latest')
+                self._tracker.log_state_dict(lr_scheduler.state_dict(), 'models:/lr_scheduler/latest')
+                self._tracker.log_state_dict(loss_scaler.state_dict(), 'models:/lost_scaler/latest')
 
             loss = self.validate()
             self.log_metrics({'val_loss': loss})
 
             if loss < self._min_loss:
-                self.save_state_dict(self._model_wo_ddp, 'models:/model/best')
+                self._tracker.log_state_dict(self._model_wo_ddp.state_dict(), 'models:/model/best')
 
             self._min_loss = min(self._min_loss, loss)
-            mlflow.log_param('epoch', epoch)
-            mlflow.log_param('current_step', self.__step)
-            mlflow.log_param('min_loss', self._min_loss)
+            self.log_metrics({'epoch': epoch})
 
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -227,7 +217,7 @@ class Trainer:
                     f'loss_scale {scaler_meter.val:.4f} ({scaler_meter.avg:.4f})\t'
                     f'mem {memory_used:.0f}MB')
 
-                self.log_metrics({'train_loss': loss_meter.avg})
+                self.log_metrics({'train_loss': loss_meter.val})
 
         epoch_time = time.time() - start
         logger.info(f"EPOCH {epoch} training takes {datetime.timedelta(seconds=int(epoch_time))}")
@@ -236,7 +226,7 @@ class Trainer:
         return loss_meter.avg
 
     def log_metrics(self, metrics: Dict[str, float]):
-        mlflow.log_metrics(metrics, self.__step)
+        self._tracker.log_metrics(metrics, self.__step)
 
     def get_criterion(self):
         raise NotImplementedError()

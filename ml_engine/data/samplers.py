@@ -51,6 +51,9 @@ class DistributedRepeatableSampler(DistributedSampler):
     def __len__(self) -> int:
         return self.num_samples * self.repeat
 
+    def set_epoch(self, _):
+        return
+
 
 class SubsetRandomSampler(Sampler):
     r"""Samples elements randomly from a given list of indices, without replacement.
@@ -207,6 +210,9 @@ class MPerClassSampler(Sampler):
                 self.batch_size % self.m_per_class
             ) == 0, "m_per_class must divide batch_size without any remainder"
             self.list_size -= self.list_size % self.batch_size
+
+    def set_epoch(self, _):
+        return
 
     def __len__(self):
         return self.list_size

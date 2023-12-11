@@ -17,8 +17,6 @@ from timm.scheduler.scheduler import Scheduler
 def build_scheduler(conf, epochs, optimizer, n_iter_per_epoch):
     num_steps = int(epochs * n_iter_per_epoch)
     warmup_steps = int(conf.warmup_epochs * n_iter_per_epoch)
-    decay_steps = int(conf.decay_epochs * n_iter_per_epoch)
-    multi_steps = [i * n_iter_per_epoch for i in conf.multisteps]
 
     lr_scheduler = None
     if conf.name == 'cosine':
@@ -42,6 +40,7 @@ def build_scheduler(conf, epochs, optimizer, n_iter_per_epoch):
             t_in_epochs=False,
         )
     elif conf.NAME == 'step':
+        decay_steps = int(conf.decay_epochs * n_iter_per_epoch)
         lr_scheduler = StepLRScheduler(
             optimizer,
             decay_t=decay_steps,
@@ -51,6 +50,7 @@ def build_scheduler(conf, epochs, optimizer, n_iter_per_epoch):
             t_in_epochs=False,
         )
     elif conf.NAME == 'multistep':
+        multi_steps = [i * n_iter_per_epoch for i in conf.multisteps]
         lr_scheduler = MultiStepLRScheduler(
             optimizer,
             milestones=multi_steps,

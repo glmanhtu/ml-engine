@@ -14,6 +14,7 @@ import random
 import numpy as np
 import torch
 import torch.distributed as dist
+from omegaconf import DictConfig, ListConfig
 from torch import inf
 
 logger = logging.getLogger(__name__)
@@ -186,3 +187,26 @@ def get_combinations(tensor1, tensor2):
 
     # Stack the grids to get all combinations
     return torch.stack((grid_number, grid_vector), dim=-1).reshape(-1, 2)
+
+
+def extract_params_from_omegaconf_dict(params):
+    result = {}
+    for param_name, element in params.items():
+        tmp = _explore_recursive(param_name, element)
+        result = {**result, **tmp}
+    return result
+
+
+def _explore_recursive(parent_name, element):
+    results = {}
+    if isinstance(element, DictConfig):
+        for k, v in element.items():
+            if isinstance(v, DictConfig) or isinstance(v, ListConfig):
+                tmp = _explore_recursive(f'{parent_name}.{k}', v)
+                results = {**results, **tmp}
+            else:
+                results[f'{parent_name}.{k}'] = v
+    elif isinstance(element, ListConfig):
+        results[f'{parent_name}'] = str(element)
+
+    return results

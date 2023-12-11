@@ -17,7 +17,7 @@ def build_optimizer(train_conf, optimizer_conf, model):
     skip_keywords = {}
     parameters = set_weight_decay(model, skip, skip_keywords)
 
-    opt_lower = optimizer_conf.NAME.lower()
+    opt_lower = optimizer_conf.name.lower()
     optimizer = None
     if opt_lower == 'sgd':
         optimizer = optim.SGD(parameters, momentum=optimizer_conf.momentum, nesterov=True,
