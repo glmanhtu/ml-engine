@@ -67,8 +67,5 @@ class Tracker(object):
     def log_artifacts(self, local_dir: str, artifact_path: Optional[str] = None) -> None:
         raise NotImplementedError()
 
-    def log_model(self, model, signature, artifact_path: str):
-        raise NotImplementedError()
-
-    def infer_signature(self, model, samples):
+    def log_model(self, model, artifact_path: str, signature=None):
         raise NotImplementedError()

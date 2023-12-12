@@ -131,10 +131,10 @@ class Trainer:
         criterion = self.get_criterion()
 
         if self._cfg.train.resume:
-            self.resume_state_dict(self._model_wo_ddp, 'models:/model/latest')
-            self.resume_state_dict(optimizer, 'models:/optimizer/latest')
-            self.resume_state_dict(lr_scheduler, 'models:/lr_scheduler/latest')
-            self.resume_state_dict(loss_scaler, 'models:/lost_scaler/latest')
+            self.resume_state_dict(self._model_wo_ddp, 'models/model/latest')
+            self.resume_state_dict(optimizer, 'models/optimizer/latest')
+            self.resume_state_dict(lr_scheduler, 'models/lr_scheduler/latest')
+            self.resume_state_dict(loss_scaler, 'models/lost_scaler/latest')
 
         self.logger.info("Start training...")
         start_time = time.time()
@@ -142,16 +142,16 @@ class Trainer:
             self.train_one_epoch(epoch, data_loader, optimizer, lr_scheduler, loss_scaler, criterion)
 
             if self.rank == 0 and (epoch % self._cfg.save_freq == 0 or epoch == (self._cfg.train.epochs - 1)):
-                self._tracker.log_state_dict(self._model_wo_ddp.state_dict(), 'models:/model/latest')
-                self._tracker.log_state_dict(optimizer.state_dict(), 'models:/optimizer/latest')
-                self._tracker.log_state_dict(lr_scheduler.state_dict(), 'models:/lr_scheduler/latest')
-                self._tracker.log_state_dict(loss_scaler.state_dict(), 'models:/lost_scaler/latest')
+                self._tracker.log_state_dict(self._model_wo_ddp.state_dict(), 'models/model/latest')
+                self._tracker.log_state_dict(optimizer.state_dict(), 'models/optimizer/latest')
+                self._tracker.log_state_dict(lr_scheduler.state_dict(), 'models/lr_scheduler/latest')
+                self._tracker.log_state_dict(loss_scaler.state_dict(), 'models/lost_scaler/latest')
 
             loss = self.validate()
             self.log_metrics({'val_loss': loss})
 
             if loss < self._min_loss:
-                self._tracker.log_state_dict(self._model_wo_ddp.state_dict(), 'models:/model/best')
+                self._tracker.log_state_dict(self._model_wo_ddp.state_dict(), 'models/model/best')
 
                 self.log_metrics({'best_loss': loss})
                 self.logger.info(f"Loss is reduced from {self._min_loss} to {loss}")
@@ -159,20 +159,20 @@ class Trainer:
             self._min_loss = min(self._min_loss, loss)
             self.log_metrics({'epoch': epoch})
 
+        self.resume_state_dict(self._model_wo_ddp, 'models/model/best')
         samples, _ = next(iter(data_loader))
-        signature = self.infer_signature(samples)
-        self.resume_state_dict(self._model_wo_ddp, 'models:/model/best')
-        self._tracker.log_model(self._model_wo_ddp, signature, 'models:/model/final')
+        self._log_model(self._model_wo_ddp, samples)
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         self.logger.info('Training time {}'.format(total_time_str))
 
+    def _log_model(self, model, samples):
+        scripted_model = torch.jit.script(model)
+        self._tracker.log_model(scripted_model, 'models/model/final')
+
     def train_step(self, samples):
         self.__step += 1
         return self._model(samples)
-
-    def infer_signature(self, examples):
-        return self._tracker.infer_signature(self._model_wo_ddp, examples)
 
     def prepare_data(self, samples, targets):
         return samples, targets

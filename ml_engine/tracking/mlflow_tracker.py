@@ -96,26 +96,6 @@ class MLFlowTracker(Tracker):
     def log_artifacts(self, local_dir: str, artifact_path: Optional[str] = None) -> None:
         mlflow.log_artifacts(local_dir, artifact_path)
 
-    def infer_signature(self, model, examples):
-        with torch.no_grad():
-            output = model(examples.cuda())
-            if isinstance(output, dict):
-                for key in output.keys():
-                    output[key] = output[key].cpu().numpy()
-            elif isinstance(output, tuple):
-                # Hack: since mlflow hasn't supported tuple output yet, we rely on the map type and force
-                # Schema of output signature to None
-                res = {}
-                for idx, features in enumerate(output):
-                    res[idx] = features.cpu().numpy()
-                signature = infer_signature(examples.numpy(), res)
-                for item in signature.outputs:
-                    item._name = None
-                return signature
-            elif isinstance(output, torch.Tensor):
-                output = output.cpu().numpy()
-            return infer_signature(examples.numpy(), output)
-
-    def log_model(self, model, signature, artifact_path: str):
+    def log_model(self, model, artifact_path: str, signature=None):
         mlflow.pytorch.log_model(model, artifact_path, signature=signature)
 
