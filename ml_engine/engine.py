@@ -70,7 +70,7 @@ class Trainer:
     def load_dataset(self, mode, data_conf, transform):
         raise NotImplementedError()
 
-    def get_dataloader(self, mode, dataset, data_conf, repeat):
+    def get_dataloader(self, mode, dataset, data_conf):
         if mode in self.data_loader_registers:
             return self.data_loader_registers[mode]
 
@@ -78,7 +78,7 @@ class Trainer:
         global_rank = self.rank
         if mode == 'train':
             sampler = DistributedRepeatableSampler(
-                dataset, num_replicas=num_tasks, rank=global_rank, shuffle=True, repeat=repeat)
+                dataset, num_replicas=num_tasks, rank=global_rank, shuffle=True, repeat=1)
 
             data_loader = DataLoader(
                 dataset, sampler=sampler,
@@ -89,7 +89,7 @@ class Trainer:
             )
         else:
             sampler = DistributedRepeatableEvalSampler(dataset, shuffle=False, rank=global_rank, num_replicas=num_tasks,
-                                                       repeat=repeat)
+                                                       repeat=1)
 
             data_loader = torch.utils.data.DataLoader(
                 dataset, sampler=sampler,
@@ -102,7 +102,7 @@ class Trainer:
         self.data_loader_registers[mode] = data_loader
         return data_loader
 
-    def train(self, ref_lr_bs=256., mode='train', data_repeat=1):
+    def train(self, ref_lr_bs=256., mode='train'):
         if self._cfg.train.resume:
             self._cfg.train.start_epoch = int(self._tracker.get_metric('epoch')[-1].value) + 1
             self.__step = self._tracker.get_metric('train_loss')[-1].step
@@ -110,7 +110,7 @@ class Trainer:
         else:
             self._tracker.log_params(extract_params_from_omegaconf_dict(self._cfg))
         dataset = self.load_dataset(mode, self._cfg.data, self.get_transform(mode, self._cfg.data))
-        data_loader = self.get_dataloader(mode, dataset, self._cfg.data, data_repeat)
+        data_loader = self.get_dataloader(mode, dataset, self._cfg.data)
 
         # linear scale the learning rate according to total batch size, may not be optimal
         batch_size = self._cfg.data.batch_size * dist.get_world_size()
@@ -256,13 +256,13 @@ class Trainer:
     def validate(self, mode='validation'):
         self._model.eval()
         dataset = self.load_dataset(mode, self._cfg.data, self.get_transform(mode, self._cfg.data))
-        data_loader = self.get_dataloader(mode, dataset, self._cfg.data, repeat=1)
+        data_loader = self.get_dataloader(mode, dataset, self._cfg.data)
         return self.validate_one_epoch(data_loader)
 
     def throughput(self, mode='validation'):
         self._model.eval()
         dataset = self.load_dataset(mode, self._cfg.data, self.get_transform(mode, self._cfg.data))
-        data_loader = self.get_dataloader(mode, dataset, self._cfg.data, repeat=1)
+        data_loader = self.get_dataloader(mode, dataset, self._cfg.data)
         for idx, (images, _) in enumerate(data_loader):
             images = images.cuda(non_blocking=True)
             batch_size = images.shape[0]
