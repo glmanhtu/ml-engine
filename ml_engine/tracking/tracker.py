@@ -31,10 +31,10 @@ class Tracker(object):
     def log_state_dict(self, state_dict, artifact_path):
         raise NotImplementedError()
 
-    def log_metrics(self, metrics: Dict[str, float], step: int, synchronous: bool = True) -> None:
+    def log_metrics(self, metrics: Dict[str, float], step: int, synchronous: Union[bool, None] = None) -> None:
         raise NotImplementedError()
 
-    def log_metric(self, key, value, step: Optional[int] = None, synchronous: bool = True) -> None:
+    def log_metric(self, key, value, step: Optional[int] = None, synchronous: Union[bool, None] = None) -> None:
         raise NotImplementedError()
 
     def log_table(self,
@@ -49,10 +49,10 @@ class Tracker(object):
                    artifact_file: str, save_kwargs: Optional[Dict[str, Any]] = None):
         raise NotImplementedError()
 
-    def log_params(self, params: Dict[str, Any], synchronous: bool = True):
+    def log_params(self, params: Dict[str, Any], synchronous: Union[bool, None] = None):
         raise NotImplementedError()
 
-    def log_param(self, key: str, value: Any, synchronous: bool = True):
+    def log_param(self, key: str, value: Any, synchronous: Union[bool, None] = None):
         raise NotImplementedError()
 
     def get_param(self, key: str):
@@ -65,4 +65,10 @@ class Tracker(object):
         raise NotImplementedError()
 
     def log_artifacts(self, local_dir: str, artifact_path: Optional[str] = None) -> None:
+        raise NotImplementedError()
+
+    def log_model(self, model, signature, artifact_path: str):
+        raise NotImplementedError()
+
+    def infer_signature(self, model, samples):
         raise NotImplementedError()
