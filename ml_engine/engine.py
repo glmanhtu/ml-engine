@@ -26,8 +26,9 @@ class Trainer:
         self._cfg = cfg
         self._tracker = tracker
         self.local_rank, self.rank, self.world_size = get_ddp_config()
-        os.makedirs(cfg.log_dir, exist_ok=True)
-        self.logger = create_logger(cfg.log_dir, self.rank, cfg.run.name, cfg.mode)
+        exp_log_dir = os.path.join(cfg.log_dir, cfg.run.name)
+        os.makedirs(exp_log_dir, exist_ok=True)
+        self.logger = create_logger(exp_log_dir, self.rank, cfg.run.name, cfg.mode)
         self.logger.info(f"RANK and WORLD_SIZE in environ: {self.rank}/{self.world_size}")
 
         seed = self._cfg.seed + self.rank
