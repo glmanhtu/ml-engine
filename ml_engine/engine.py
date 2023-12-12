@@ -17,7 +17,8 @@ from ml_engine.lr_scheduler import build_scheduler
 from ml_engine.optimizer import build_optimizer
 from ml_engine.data.samplers import DistributedRepeatableSampler, DistributedRepeatableEvalSampler
 from ml_engine.tracking.tracker import Tracker
-from ml_engine.utils import get_ddp_config, NativeScalerWithGradNormCount, extract_params_from_omegaconf_dict
+from ml_engine.utils import get_ddp_config, NativeScalerWithGradNormCount, extract_params_from_omegaconf_dict, \
+    revert_sync_batchnorm
 from ml_engine.evaluation.metrics import AverageMeter
 
 
@@ -167,7 +168,9 @@ class Trainer:
         self.logger.info('Training time {}'.format(total_time_str))
 
     def _log_model(self, model, samples):
-        scripted_model = torch.jit.script(model)
+        reverted_bn_model = revert_sync_batchnorm(model)
+        reverted_bn_model.eval()
+        scripted_model = torch.jit.script(reverted_bn_model)
         self._tracker.log_model(scripted_model, 'models/model/final')
 
     def train_step(self, samples):
