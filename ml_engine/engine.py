@@ -150,9 +150,7 @@ class Trainer:
             self.log_metrics({'val_loss': loss})
 
             if loss < self._min_loss:
-                samples, _ = next(iter(data_loader))
-                signature = self.infer_signature(samples)
-                self._tracker.log_model(self._model_wo_ddp, signature, 'models:/model/best')
+                self._tracker.log_state_dict(self._model_wo_ddp.state_dict(), 'models:/model/best')
 
                 self.log_metrics({'best_loss': loss})
                 self.logger.info(f"Loss is reduced from {self._min_loss} to {loss}")
@@ -160,6 +158,10 @@ class Trainer:
             self._min_loss = min(self._min_loss, loss)
             self.log_metrics({'epoch': epoch})
 
+        samples, _ = next(iter(data_loader))
+        signature = self.infer_signature(samples)
+        self.resume_state_dict(self._model_wo_ddp, 'models:/model/best')
+        self._tracker.log_model(self._model_wo_ddp, signature, 'models:/model/final')
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         self.logger.info('Training time {}'.format(total_time_str))
