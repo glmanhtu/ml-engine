@@ -38,6 +38,15 @@ class LossCombination(torch.nn.Module):
         return sum(losses)
 
 
+class NegativeLoss(torch.nn.Module):
+    def __init__(self, criterion):
+        super().__init__()
+        self.criterion = criterion
+
+    def forward(self, predict, actual):
+        return -self.criterion(predict, actual).mean()
+
+
 class NegativeCosineSimilarityLoss(torch.nn.Module):
     def __init__(self):
         super().__init__()
