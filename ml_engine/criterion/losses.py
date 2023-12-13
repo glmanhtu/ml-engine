@@ -2,10 +2,13 @@ import torch
 
 
 class DistanceLoss(torch.nn.Module):
-    def __init__(self, loss_fn, distance_fn):
+    def __init__(self, loss_fn, distance_fn=None):
         super().__init__()
         self.criterion = loss_fn
-        self.distance_fn = distance_fn
+        if distance_fn is None:
+            self.distance_fn = loss_fn
+        else:
+            self.distance_fn = distance_fn
 
     def forward(self, predict, actual):
         return self.criterion(predict, actual)
