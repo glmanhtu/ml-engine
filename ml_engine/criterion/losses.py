@@ -10,7 +10,7 @@ class DistanceLoss(torch.nn.Module):
     def forward(self, predict, actual):
         return self.criterion(predict, actual)
 
-    def distance(self, predict, actual):
+    def compute_distance(self, predict, actual):
         return self.distance_fn(predict, actual)
 
 
