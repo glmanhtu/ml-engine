@@ -263,20 +263,20 @@ class ResNet(nn.Module):
                 self.model.layer3.requires_grad_(False)
 
         # remove the avgpool and most importantly the fc layer
-        self.model.avgpool = None
-        self.model.fc = None
+        self.model.avgpool = torch.nn.Identity()
+        self.model.fc = torch.nn.Identity()
 
         if 4 in layers_to_crop:
-            self.model.layer4 = None
+            self.model.layer4 = torch.nn.Identity()
         if 3 in layers_to_crop:
-            self.model.layer3 = None
+            self.model.layer3 = torch.nn.Identity()
 
         out_channels = 2048
         if '34' in model_name or '18' in model_name:
             out_channels = 512
 
-        self.out_channels = out_channels // 2 if self.model.layer4 is None else out_channels
-        self.out_channels = self.out_channels // 2 if self.model.layer3 is None else self.out_channels
+        self.out_channels = out_channels // 2 if 4 in layers_to_crop else out_channels
+        self.out_channels = self.out_channels // 2 if 3 in layers_to_crop else self.out_channels
 
     def forward(self, x):
         x = self.model.conv1(x)
@@ -285,10 +285,8 @@ class ResNet(nn.Module):
         x = self.model.maxpool(x)
         x = self.model.layer1(x)
         x = self.model.layer2(x)
-        if self.model.layer3 is not None:
-            x = self.model.layer3(x)
-        if self.model.layer4 is not None:
-            x = self.model.layer4(x)
+        x = self.model.layer3(x)
+        x = self.model.layer4(x)
         return x
 
 
