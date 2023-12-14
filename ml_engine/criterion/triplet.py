@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 
 class BatchWiseTripletLoss(torch.nn.Module):
@@ -11,6 +12,7 @@ class BatchWiseTripletLoss(torch.nn.Module):
         self.margin = margin
 
     def forward(self, emb, target):
+        emb = F.normalize(emb, p=2, dim=-1)
         return self.forward_impl(emb, target, emb, target)
 
     def forward_impl(self, inputs_col, targets_col, inputs_row, targets_row):

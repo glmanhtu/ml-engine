@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 
 class DistanceLoss(torch.nn.Module):
@@ -22,6 +23,8 @@ class BatchDotProduct(torch.nn.Module):
 
     def forward(self, predict, actual):
         B, S = predict.shape
+        predict = F.normalize(predict, p=2, dim=-1)
+        actual = F.normalize(actual, p=2, dim=-1)
         return torch.bmm(predict.view(B, 1, S), actual.view(B, S, 1)).reshape(-1)
 
 
