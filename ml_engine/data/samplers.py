@@ -186,9 +186,10 @@ class DistributedRepeatableEvalSampler(Sampler):
 
 class MPerClassSampler(Sampler):
     """
+    Adapted from pytorch-metric-learning package
     Sample maximum M items per class, depending on the size of current class
     """
-    def __init__(self, labels, m, batch_size=None, length_before_new_iter=100000):
+    def __init__(self, labels, m, batch_size=None, length_before_new_iter=100000, repeat_same_class=False):
         super().__init__()
         if isinstance(labels, torch.Tensor):
             labels = labels.numpy()
@@ -198,6 +199,7 @@ class MPerClassSampler(Sampler):
         self.labels = list(self.labels_to_indices.keys())
         self.length_of_single_pass = self.m_per_class * len(self.labels)
         self.list_size = length_before_new_iter
+        self.repeat_same_class = repeat_same_class
         if self.batch_size is None:
             if self.length_of_single_pass < self.list_size:
                 self.list_size -= (self.list_size) % (self.length_of_single_pass)
@@ -230,7 +232,10 @@ class MPerClassSampler(Sampler):
                 n_items_remaining = self.list_size - len(idx_list)
                 if n_items_remaining == 0:
                     break
-                size = min(self.m_per_class, len(t), n_items_remaining)
-                items = np.random.choice(t, size, replace=False)
+                if self.repeat_same_class or len(t) >= self.m_per_class:
+                    items = np.random.choice(t, self.m_per_class, replace=True)
+                else:
+                    size = min(self.m_per_class, len(t), n_items_remaining)
+                    items = np.random.choice(t, size, replace=False)
                 idx_list = np.concatenate([idx_list, items], axis=0)
         return iter(idx_list.tolist())
