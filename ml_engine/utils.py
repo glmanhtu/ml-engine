@@ -246,3 +246,19 @@ def revert_sync_batchnorm(module):
         module_output.add_module(name, revert_sync_batchnorm(child))
     del module
     return module_output
+
+
+def compute_distance_matrix(embeddings, distance_fn):
+    """
+    Compute the distance matrix between elements in embeddings
+    @param embeddings: N x M tensor
+    @param distance_fn: distance function
+    @return: N x N distance matrix
+    """
+    size = len(embeddings)
+    distance_matrix = torch.zeros((size, size), dtype=torch.float32)
+    combinations = get_combinations(torch.arange(size), torch.arange(size))
+    scores = distance_fn(embeddings[combinations[:, 0]], embeddings[combinations[:, 1]])
+    distance_matrix[combinations[:, 0], combinations[:, 1]] = scores
+    distance_matrix[combinations[:, 1], combinations[:, 0]] = scores
+    return distance_matrix
