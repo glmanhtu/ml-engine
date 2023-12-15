@@ -21,11 +21,18 @@ class DistanceLoss(torch.nn.Module):
 class BatchDotProduct(torch.nn.Module):
     # See https://github.com/pytorch/pytorch/issues/18027
 
+    def __init__(self, reduction='mean'):
+        super().__init__()
+        self.reduction = reduction
+
     def forward(self, predict, actual):
         B, S = predict.shape
         predict = F.normalize(predict, p=2, dim=-1)
         actual = F.normalize(actual, p=2, dim=-1)
-        return torch.bmm(predict.view(B, 1, S), actual.view(B, S, 1)).reshape(-1)
+        result = torch.bmm(predict.view(B, 1, S), actual.view(B, S, 1)).reshape(-1)
+        if self.reduction == 'mean':
+            return result.mean()
+        return result
 
 
 class LossCombination(torch.nn.Module):
@@ -47,13 +54,18 @@ class NegativeLoss(torch.nn.Module):
         self.criterion = criterion
 
     def forward(self, predict, actual):
-        return -self.criterion(predict, actual).mean()
+        return -self.criterion(predict, actual)
 
 
 class NegativeCosineSimilarityLoss(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, reduction='mean'):
         super().__init__()
-        self.criterion = torch.nn.CosineSimilarity(dim=1)
+        self.criterion = torch.nn.CosineSimilarity(dim=-1)
+        self.reduction = reduction
 
     def forward(self, predict, actual):
-        return -self.criterion(predict, actual).mean()
+        result = -self.criterion(predict, actual)
+        if self.reduction == 'mean':
+            return result.mean()
+
+        return result

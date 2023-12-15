@@ -38,3 +38,25 @@ def compute_distance_matrix(data: Dict[str, Tensor], reduction='mean', distance_
 
     matrix = pd.DataFrame.from_dict(distance_map, orient='index').sort_index()
     return matrix.reindex(sorted(matrix.columns), axis=1)
+
+
+def compute_distance_matrix_from_embeddings(embeddings, distance_fn, batch_size=256):
+    """
+    Compute the distance matrix between elements in embeddings
+    @param embeddings: N x M tensor
+    @param distance_fn: distance function
+    @param batch_size: for reduce computing overheat
+    @return: N x N distance matrix
+    """
+    size = len(embeddings)
+    distance_matrix = torch.zeros((size, size), dtype=embeddings.dtype)
+    combinations = get_combinations(torch.arange(size), torch.arange(size))
+    all_scores = []
+    for chunk in torch.split(combinations, batch_size):
+        scores = distance_fn(embeddings[chunk[:, 0]], embeddings[chunk[:, 1]])
+        all_scores.append(scores.cpu())
+
+    scores = torch.cat(all_scores, dim=0)
+    distance_matrix[combinations[:, 0], combinations[:, 1]] = scores
+    distance_matrix[combinations[:, 1], combinations[:, 0]] = scores
+    return distance_matrix
