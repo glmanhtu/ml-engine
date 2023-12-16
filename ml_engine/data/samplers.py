@@ -230,7 +230,7 @@ class MPerClassSampler(Sampler):
             for label in curr_label_set:
                 t = self.labels_to_indices[label]
                 n_items_remaining = self.list_size - len(idx_list)
-                if n_items_remaining == 0:
+                if n_items_remaining <= 0:
                     break
                 if self.repeat_same_class or len(t) >= self.m_per_class:
                     items = np.random.choice(t, self.m_per_class, replace=True)
