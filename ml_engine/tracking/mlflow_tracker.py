@@ -1,15 +1,14 @@
 from typing import Any, Dict, Union, Optional, TYPE_CHECKING
-
-import mlflow
-import torch
-from mlflow import ActiveRun
-from mlflow.models import infer_signature
-
-from ml_engine.tracking.tracker import Tracker
+import os
+from urllib.parse import urlparse
 
 import PIL.Image
+import mlflow
 import numpy as np
 import pandas as pd
+from mlflow import ActiveRun
+
+from ml_engine.tracking.tracker import Tracker
 
 if TYPE_CHECKING:
     import matplotlib
@@ -47,8 +46,10 @@ class MLFlowTracker(Tracker):
         mlflow.end_run()
 
     def get_state_dict(self, artifact_path):
-        state_dict_uri = mlflow.get_artifact_uri(artifact_path)
-        return mlflow.pytorch.load_state_dict(state_dict_uri)
+        parsed_path = urlparse(artifact_path)
+        if not parsed_path.scheme:
+            artifact_path = mlflow.get_artifact_uri(artifact_path)
+        return mlflow.pytorch.load_state_dict(artifact_path)
 
     def log_state_dict(self, state_dict, artifact_path):
         mlflow.pytorch.log_state_dict(state_dict, artifact_path)

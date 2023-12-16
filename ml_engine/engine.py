@@ -1,5 +1,4 @@
 import datetime
-import logging
 import os
 import time
 from typing import Dict
@@ -12,14 +11,14 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
 
 from ml_engine import utils
+from ml_engine.data.samplers import DistributedRepeatableSampler, DistributedRepeatableEvalSampler
+from ml_engine.evaluation.metrics import AverageMeter
 from ml_engine.logger import create_logger
 from ml_engine.lr_scheduler import build_scheduler
 from ml_engine.optimizer import build_optimizer
-from ml_engine.data.samplers import DistributedRepeatableSampler, DistributedRepeatableEvalSampler
 from ml_engine.tracking.tracker import Tracker
 from ml_engine.utils import get_ddp_config, NativeScalerWithGradNormCount, extract_params_from_omegaconf_dict, \
     revert_sync_batchnorm
-from ml_engine.evaluation.metrics import AverageMeter
 
 
 class Trainer:
@@ -44,6 +43,7 @@ class Trainer:
 
         if self._cfg.model.pretrained:
             state_dict = self._tracker.get_state_dict(self._cfg.model.pretrained)
+            state_dict = self.prepare_pretrained_model(self._cfg.model.type, model.state_dict(), state_dict)
             model.load_state_dict(state_dict)
 
         model.cuda()
@@ -55,6 +55,16 @@ class Trainer:
         self._model_wo_ddp = model_wo_ddp
         self.__step = 0
         self.data_loader_registers = {}
+
+    def prepare_pretrained_model(self, model_type, model_state_dict, pretrained_state_dict):
+        """
+        Modify the pretrained state dict before loading the model
+        @param model_type:
+        @param model_state_dict:
+        @param pretrained_state_dict:
+        @return: modified pretrained state_dict
+        """
+        return pretrained_state_dict
 
     def resume_state_dict(self, module, artifact_path):
         state_dict = self._tracker.get_state_dict(artifact_path)
