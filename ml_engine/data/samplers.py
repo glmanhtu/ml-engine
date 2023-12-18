@@ -63,7 +63,7 @@ class SubsetRandomSampler(Sampler):
     """
 
     def __init__(self, indices):
-        super().__init__()
+        super().__init__(None)
         self.epoch = 0
         self.indices = indices
 
@@ -123,7 +123,7 @@ class DistributedRepeatableEvalSampler(Sampler):
     """
 
     def __init__(self, dataset, num_replicas=None, rank=None, shuffle=False, seed=0, repeat=1):
-        super().__init__()
+        super().__init__(None)
         if num_replicas is None:
             if not dist.is_available():
                 raise RuntimeError("Requires distributed package to be available")
@@ -190,7 +190,7 @@ class MPerClassSampler(Sampler):
     Sample maximum M items per class, depending on the size of current class
     """
     def __init__(self, labels, m, batch_size=None, length_before_new_iter=100000, repeat_same_class=False):
-        super().__init__()
+        super().__init__(None)
         if isinstance(labels, torch.Tensor):
             labels = labels.numpy()
         self.m_per_class = int(m)
