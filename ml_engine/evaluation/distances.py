@@ -13,23 +13,27 @@ def cosine_distance(source, target):
     return 1 - similarity
 
 
-def compute_distance_matrix(data: Dict[str, Tensor], reduction='mean', distance_fn=cosine_distance):
+def compute_distance_matrix(data: Dict[str, Tensor], reduction='mean', distance_fn=cosine_distance, bs=256):
     distance_map = {}
     fragments = list(data.keys())
     for i in range(len(fragments)):
         for j in range(i, len(fragments)):
             source, target = fragments[i], fragments[j]
             combinations = get_combinations(torch.arange(len(data[source])), torch.arange(len(data[target])))
-            source_features = data[source][combinations[:, 0]]
-            target_features = data[target][combinations[:, 1]]
 
-            distance = distance_fn(source_features, target_features)
+            all_scores = []
+            for chunk in torch.split(combinations, bs):
+                scores = distance_fn(data[source][chunk[:, 0]], data[target][chunk[:, 1]])
+                all_scores.append(scores.cpu())
+
+            scores = torch.cat(all_scores, dim=0)
+
             if reduction == 'mean':
-                distance = distance.mean()
+                distance = scores.mean()
             elif reduction == 'max':
-                distance = torch.max(distance)
+                distance = torch.max(scores)
             elif reduction == 'min':
-                distance = torch.min(distance)
+                distance = torch.min(scores)
             else:
                 raise NotImplementedError(f"Reduction {reduction} is not implemented!")
             distance = distance.cpu().item()
