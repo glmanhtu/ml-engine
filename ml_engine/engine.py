@@ -15,6 +15,8 @@ from ml_engine.data.samplers import DistributedRepeatableSampler, DistributedRep
 from ml_engine.evaluation.metrics import AverageMeter
 from ml_engine.logger import create_logger
 from ml_engine.lr_scheduler import build_scheduler
+from ml_engine.modelling.resnet import ResNetWrapper, ResNet32MixConv
+from ml_engine.modelling.simsiam import SimSiamV2CE, SimSiamV2
 from ml_engine.optimizer import build_optimizer
 from ml_engine.tracking.tracker import Tracker
 from ml_engine.utils import get_ddp_config, NativeScalerWithGradNormCount, extract_params_from_omegaconf_dict, \
@@ -72,7 +74,44 @@ class Trainer:
         self.logger.info(f'State dict {artifact_path} is loaded')
 
     def build_model(self, model_conf):
-        raise NotImplementedError()
+        if model_conf.type == 'ss2ce':
+            model = SimSiamV2CE(
+                arch=model_conf.arch,
+                pretrained=model_conf.weights,
+                dim=model_conf.embed_dim,
+                pred_dim=model_conf.pred_dim,
+                dropout=model_conf.dropout,
+                n_classes=model_conf.n_classes)
+
+        elif model_conf.type == 'ss2':
+            model = SimSiamV2(
+                arch=model_conf.arch,
+                pretrained=model_conf.weights,
+                dim=model_conf.embed_dim,
+                pred_dim=model_conf.pred_dim,
+                dropout=model_conf.dropout)
+
+        elif model_conf.type == 'resnet':
+            model = ResNetWrapper(
+                backbone=model_conf.arch,
+                weights=model_conf.weights,
+                layers_to_freeze=model_conf.layers_freeze)
+
+        elif model_conf.type == 'mixconv':
+            model = ResNet32MixConv(
+                img_size=(self._cfg.data.img_size, self._cfg.data.img_size),
+                backbone=model_conf.arch,
+                out_channels=model_conf.out_channels,
+                mix_depth=model_conf.mix_depth,
+                out_rows=model_conf.out_rows,
+                weights=model_conf.weights,
+                layers_to_freeze=model_conf.layers_freeze)
+
+        else:
+            raise NotImplementedError(f'Network {model_conf.type} is not implemented!')
+
+        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+        return model
 
     def get_transform(self, mode, data_conf):
         raise NotImplementedError()
@@ -150,6 +189,14 @@ class Trainer:
         self.logger.info("Start training...")
         start_time = time.time()
         for epoch in range(self._cfg.train.start_epoch, self._cfg.train.epochs):
+
+            loss = self.validate()
+            self.log_metrics({'init_loss': loss})
+
+            if loss < self._min_loss:
+                self.log_metrics({'best_loss': loss})
+                self.logger.info(f"Init loss: {loss}")
+
             self.train_one_epoch(epoch, data_loader, optimizer, lr_scheduler, loss_scaler, criterion)
 
             if self.rank == 0 and (epoch % self._cfg.save_freq == 0 or epoch == (self._cfg.train.epochs - 1)):
