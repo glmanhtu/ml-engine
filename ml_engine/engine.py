@@ -190,12 +190,12 @@ class Trainer:
             self.resume_state_dict(lr_scheduler, 'models/lr_scheduler/latest')
             self.resume_state_dict(loss_scaler, 'models/lost_scaler/latest')
 
+        loss = self.validate()
+        self.log_metrics({'init_loss': loss})
+
         self.logger.info("Start training...")
         start_time = time.time()
         for epoch in range(self._cfg.train.start_epoch, self._cfg.train.epochs):
-
-            loss = self.validate()
-            self.log_metrics({'init_loss': loss})
 
             if loss < self._min_loss:
                 self.log_metrics({'best_loss': loss})
