@@ -278,6 +278,7 @@ class Trainer:
 
             if (idx + 1) % self._cfg.train.accumulation_steps == 0:
                 lr_scheduler.step_update((epoch * len(data_loader) + idx) // self._cfg.train.accumulation_steps)
+                optimizer.step()
                 optimizer.zero_grad()
 
             torch.cuda.synchronize()
