@@ -277,10 +277,7 @@ class Trainer:
                 loss.backward()
 
             if (idx + 1) % self._cfg.train.accumulation_steps == 0:
-                if self._cfg.amp_enable:
-                    lr_scheduler.step_update((epoch * len(data_loader) + idx) // self._cfg.train.accumulation_steps)
-                else:
-                    optimizer.step()
+                lr_scheduler.step_update((epoch * len(data_loader) + idx) // self._cfg.train.accumulation_steps)
                 optimizer.zero_grad()
 
             torch.cuda.synchronize()
