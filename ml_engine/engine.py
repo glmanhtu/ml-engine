@@ -250,7 +250,6 @@ class Trainer:
 
         start = time.time()
         end = time.time()
-        optimizer.zero_grad()
         for idx, (samples, targets) in enumerate(data_loader):
             samples = samples.cuda(non_blocking=True)
             targets = targets.cuda(non_blocking=True)
@@ -262,30 +261,24 @@ class Trainer:
             loss = criterion(outputs, targets)
             loss = loss / self._cfg.train.accumulation_steps
 
-            if self._cfg.amp_enable:
-                # this attribute is added by timm on one optimizer (adahessian)
-                is_second_order = hasattr(optimizer, 'is_second_order') and optimizer.is_second_order
-                grad_norm = loss_scaler(loss, optimizer, clip_grad=self._cfg.train.clip_grad,
-                                        parameters=self._model.parameters(), create_graph=is_second_order,
-                                        update_grad=(idx + 1) % self._cfg.train.accumulation_steps == 0)
-                loss_scale_value = loss_scaler.state_dict()["scale"]
-                if grad_norm is not None:  # loss_scaler return None if not update
-                    norm_meter.update(grad_norm)
-
-                scaler_meter.update(loss_scale_value)
-            else:
-                loss.backward()
+            # this attribute is added by timm on one optimizer (adahessian)
+            is_second_order = hasattr(optimizer, 'is_second_order') and optimizer.is_second_order
+            grad_norm = loss_scaler(loss, optimizer, clip_grad=self._cfg.train.clip_grad,
+                                    parameters=self._model.parameters(), create_graph=is_second_order,
+                                    update_grad=(idx + 1) % self._cfg.train.accumulation_steps == 0)
 
             if (idx + 1) % self._cfg.train.accumulation_steps == 0:
-                lr_scheduler.step_update((epoch * len(data_loader) + idx) // self._cfg.train.accumulation_steps)
-                if not self._cfg.amp_enable:
-                    optimizer.step()
-
                 optimizer.zero_grad()
+                lr_scheduler.step_update((epoch * len(data_loader) + idx) // self._cfg.train.accumulation_steps)
+            loss_scale_value = loss_scaler.state_dict()["scale"]
 
             torch.cuda.synchronize()
 
             loss_meter.update(loss.item() * self._cfg.train.accumulation_steps, targets.size(0))
+            if grad_norm is not None:  # loss_scaler return None if not update
+                norm_meter.update(grad_norm)
+
+            scaler_meter.update(loss_scale_value)
             batch_time.update(time.time() - end)
             end = time.time()
 
