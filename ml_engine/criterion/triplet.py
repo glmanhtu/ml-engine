@@ -27,12 +27,21 @@ class BatchWiseTripletDistanceLoss(torch.nn.Module):
             pos_pair_idx = torch.nonzero(pos_mask[i, i:]).view(-1)
             if pos_pair_idx.shape[0] > 0:
                 pos_combinations = get_combinations(it, pos_pair_idx + i)
-                pos_groups.append(pos_combinations)
 
-                neg_pair_idx = torch.nonzero(neg_mask[i, i:]).view(-1)
-                if neg_pair_idx.shape[0] > 0:
-                    combinations = get_combinations(it, neg_pair_idx + i)
-                    neg_groups.append(combinations[torch.randperm(combinations.shape[0])[:len(pos_combinations)]])
+                neg_pair_idx = torch.nonzero(neg_mask[i, :]).view(-1)
+                if pos_combinations.shape[0] > 0 and neg_pair_idx.shape[0] > 0:
+                    neg_combinations = get_combinations(it, neg_pair_idx)
+
+                    if pos_combinations.shape[0] < neg_combinations.shape[0]:
+                        pos_combinations = pos_combinations[torch.randint(high=pos_combinations.shape[0],
+                                                                          size=(neg_combinations.shape[0]))]
+                    elif neg_combinations.shape[0] < 1:
+                        continue
+                    elif neg_combinations.shape[0] < pos_combinations.shape[0]:
+                        neg_combinations = neg_combinations[torch.randint(high=neg_combinations.shape[0],
+                                                                          size=(pos_combinations.shape[0]))]
+                    neg_groups.append(neg_combinations)
+                    pos_groups.append(pos_combinations)
 
         pos_groups = torch.cat(pos_groups, dim=0)
         neg_groups = torch.cat(neg_groups, dim=0)
