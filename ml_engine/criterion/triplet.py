@@ -39,7 +39,7 @@ class BatchWiseTripletDistanceLoss(torch.nn.Module):
                         continue
                     elif neg_combinations.shape[0] < pos_combinations.shape[0]:
                         neg_combinations = neg_combinations[torch.randint(high=neg_combinations.shape[0],
-                                                                          size=(pos_combinations.shape[0]),)]
+                                                                          size=(pos_combinations.shape[0],))]
                     neg_groups.append(neg_combinations)
                     pos_groups.append(pos_combinations)
 
