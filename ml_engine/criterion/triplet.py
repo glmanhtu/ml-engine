@@ -1,6 +1,49 @@
 import torch
 import torch.nn.functional as F
 
+from ml_engine.utils import get_combinations
+
+
+class BatchWiseTripletDistanceLoss(torch.nn.Module):
+
+    def __init__(self, distance_fn, margin=0.15):
+        super().__init__()
+        self.margin = margin
+        self.loss_fn = torch.nn.TripletMarginWithDistanceLoss(margin=margin, distance_function=distance_fn)
+
+    def forward(self, samples, targets):
+        n = samples.size(0)
+        # split the positive and negative pairs
+        eyes_ = torch.eye(n, dtype=torch.bool).cuda()
+        pos_mask = targets.expand(
+            targets.shape[0], n
+        ).t() == targets.expand(n, targets.shape[0])
+        neg_mask = ~pos_mask
+        pos_mask[:, :n] = pos_mask[:, :n] * ~eyes_
+
+        pos_groups, neg_groups = [], []
+        for i in range(n):
+            it = torch.tensor([i], device=samples.device)
+            pos_pair_idx = torch.nonzero(pos_mask[i, i:]).view(-1)
+            if pos_pair_idx.shape[0] > 0:
+                pos_combinations = get_combinations(it, pos_pair_idx + i)
+                pos_groups.append(pos_combinations)
+
+                neg_pair_idx = torch.nonzero(neg_mask[i, i:]).view(-1)
+                if neg_pair_idx.shape[0] > 0:
+                    combinations = get_combinations(it, neg_pair_idx + i)
+                    neg_groups.append(combinations[torch.randperm(combinations.shape[0])[:len(pos_combinations)]])
+
+        pos_groups = torch.cat(pos_groups, dim=0)
+        neg_groups = torch.cat(neg_groups, dim=0)
+
+        assert torch.equal(pos_groups[:, 0], neg_groups[:, 0])
+        anchor = samples[pos_groups[:, 0]]
+        positive = samples[pos_groups[:, 1]]
+        negative = samples[neg_groups[:, 1]]
+
+        return self.loss_fn(anchor, positive, negative)
+
 
 class BatchWiseTripletLoss(torch.nn.Module):
     """
