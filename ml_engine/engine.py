@@ -111,7 +111,8 @@ class Trainer:
         else:
             timm_models = timm.list_models(pretrained=True)
             if model_conf.arch in timm_models:
-                return timm.create_model(model_conf.arch, pretrained=model_conf.weights, num_classes=0)
+                return timm.create_model(model_conf.arch, pretrained=model_conf.weights,
+                                         num_classes=model_conf.num_classes)
             raise NotImplementedError(f'Network {model_conf.type} is not implemented!')
 
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
