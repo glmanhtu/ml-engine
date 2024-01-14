@@ -67,6 +67,13 @@ class Trainer:
         @param pretrained_state_dict:
         @return: modified pretrained state_dict
         """
+        if 'head.bias' in pretrained_state_dict:
+            head_bias_pretrained = pretrained_state_dict['head.bias']
+            n_c1 = head_bias_pretrained.shape[0]
+            n_c2 = model_state_dict['head.bias'].shape[0]
+            if n_c1 != n_c2:
+                pretrained_state_dict['head.weight'] = model_state_dict['head.weight']
+                pretrained_state_dict['head.bias'] = model_state_dict['head.bias']
         return pretrained_state_dict
 
     def resume_state_dict(self, module, artifact_path):
