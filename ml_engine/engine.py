@@ -45,8 +45,8 @@ class Trainer:
         n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
         self.logger.info(f"Number of params: {n_parameters}")
 
-        if self._cfg.model.weight:
-            state_dict = self._tracker.get_state_dict(self._cfg.model.weight)
+        if self._cfg.model.weights:
+            state_dict = self._tracker.get_state_dict(self._cfg.model.weights)
             state_dict = self.prepare_pretrained_model(self._cfg.model.type, model.state_dict(), state_dict)
             model.load_state_dict(state_dict)
 
