@@ -1,3 +1,4 @@
+import tempfile
 from typing import Any, Dict, Union, Optional, TYPE_CHECKING
 import os
 from urllib.parse import urlparse
@@ -147,4 +148,14 @@ class MLFlowTracker(Tracker):
             return
 
         mlflow.pytorch.log_model(model, artifact_path, signature=signature)
+
+    def log_table_as_csv(self, data: pd.DataFrame, artifact_path: str, filename: str) -> None:
+        if not self.should_monitor():
+            return
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, filename)
+            data.to_csv(path)
+            self.log_artifact(path, artifact_path)
+
 
