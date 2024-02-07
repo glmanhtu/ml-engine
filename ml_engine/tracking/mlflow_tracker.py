@@ -7,8 +7,10 @@ import mlflow
 import numpy as np
 import pandas as pd
 from mlflow import ActiveRun
+import torch.distributed as dist
 
 from ml_engine.tracking.tracker import Tracker
+from ml_engine.utils import EmptyContext
 
 if TYPE_CHECKING:
     import matplotlib
@@ -36,9 +38,13 @@ class MLFlowTracker(Tracker):
         self.client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
         self.synchronous = synchronous
 
-    def start_tracking(self, run_id: Optional[str] = None,
+    def start_tracking(self, run_id: Optional[str] = None, rank: Optional[int] = None,
                        run_name: Optional[str] = None, nested: bool = False, tags: Optional[Dict[str, Any]] = None,
                        description: Optional[str] = None, log_system_metrics: Optional[bool] = None):
+        if rank is not None:
+            if rank != dist.get_rank():
+                return EmptyContext()
+
         self.run = mlflow.start_run(run_id, self.exp_id, run_name, nested, tags, description, log_system_metrics)
         return self.run
 

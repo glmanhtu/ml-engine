@@ -248,3 +248,10 @@ def revert_sync_batchnorm(module):
     return module_output
 
 
+class EmptyContext:
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return True
