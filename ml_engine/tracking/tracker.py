@@ -22,6 +22,9 @@ class Tracker(object):
                        log_system_metrics: Optional[bool] = None):
         raise NotImplementedError()
 
+    def should_monitor(self):
+        raise NotImplementedError()
+
     def stop_tracking(self):
         raise NotImplementedError()
 
