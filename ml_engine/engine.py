@@ -158,6 +158,7 @@ class Trainer:
         else:
             self._tracker.log_params(extract_params_from_omegaconf_dict(self._cfg))
         dataset = self.load_dataset(mode, self._cfg.data, self.get_transform(mode, self._cfg.data))
+        self.logger.info(f"Training data size: {len(dataset)}")
         data_loader = self.get_dataloader(mode, dataset, self._cfg.data)
 
         # linear scale the learning rate according to total batch size, may not be optimal
@@ -312,6 +313,8 @@ class Trainer:
     def validate(self, mode='validation'):
         self._model.eval()
         dataset = self.load_dataset(mode, self._cfg.data, self.get_transform(mode, self._cfg.data))
+        self.logger.info(f"Validating data size: {len(dataset)}")
+
         data_loader = self.get_dataloader(mode, dataset, self._cfg.data)
         return self.validate_one_epoch(data_loader)
 
