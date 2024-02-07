@@ -6,10 +6,12 @@ from ml_engine.utils import get_combinations
 
 class BatchWiseTripletDistanceLoss(torch.nn.Module):
 
-    def __init__(self, distance_fn, margin=0.15):
+    def __init__(self, distance_fn, margin=0.15, reduction='mean'):
         super().__init__()
         self.margin = margin
-        self.loss_fn = torch.nn.TripletMarginWithDistanceLoss(margin=margin, distance_function=distance_fn)
+        self.loss_fn = torch.nn.TripletMarginWithDistanceLoss(margin=margin,
+                                                              distance_function=distance_fn,
+                                                              reduction=reduction)
 
     def forward(self, samples, targets):
         n = samples.size(0)
