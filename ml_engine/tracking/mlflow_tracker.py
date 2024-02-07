@@ -30,12 +30,9 @@ class MLFlowTracker(Tracker):
 
         mlflow.set_tracking_uri(tracking_uri)
         self.rank = rank
-        if self.should_monitor():
-            exp = mlflow.get_experiment_by_name(name)
-            if not exp:
-                mlflow.create_experiment(name, artifact_location, tags)
-            exp = mlflow.set_experiment(name)
-            self.exp_id = exp.experiment_id
+        self.name = name
+        self.artifact_location = artifact_location
+        self.exp_tags = tags
         self.tracking_uri = tracking_uri
         self.run: Union[ActiveRun, None] = None
         self.client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
@@ -47,7 +44,12 @@ class MLFlowTracker(Tracker):
         if not self.should_monitor():
             return EmptyContext()
 
-        self.run = mlflow.start_run(run_id, self.exp_id, run_name, nested, tags, description, log_system_metrics)
+        exp = mlflow.get_experiment_by_name(self.name)
+        if not exp:
+            mlflow.create_experiment(self.name, self.artifact_location, self.exp_tags)
+        exp = mlflow.set_experiment(self.name)
+        exp_id = exp.experiment_id
+        self.run = mlflow.start_run(run_id, exp_id, run_name, nested, tags, description, log_system_metrics)
         return self.run
 
     def should_monitor(self):
