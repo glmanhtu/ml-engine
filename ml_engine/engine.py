@@ -339,4 +339,6 @@ class Trainer:
             return throughput_val
 
     def __del__(self):
-        dist.destroy_process_group()
+        if dist.is_initialized():
+            torch.distributed.barrier()
+            dist.destroy_process_group()
