@@ -337,3 +337,6 @@ class Trainer:
             throughput_val = 30 * batch_size / (tic2 - tic1)
             self.logger.info(f"batch_size {batch_size} throughput {throughput_val}")
             return throughput_val
+
+    def __del__(self):
+        dist.destroy_process_group()
