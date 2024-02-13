@@ -240,7 +240,9 @@ class Trainer:
     def train_one_epoch(self, epoch, data_loader, optimizer, lr_scheduler, loss_scaler, criterion):
         self._model.train()
         optimizer.zero_grad()
-        data_loader.sampler.set_epoch(epoch)
+        set_epoch_op = getattr(data_loader.sampler, "set_epoch", None)
+        if callable(set_epoch_op):
+            set_epoch_op(epoch)
         batch_time = AverageMeter()
         loss_meter, norm_meter, scaler_meter = AverageMeter(), AverageMeter(), AverageMeter()
 
