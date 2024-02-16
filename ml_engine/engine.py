@@ -46,9 +46,11 @@ class Trainer:
         self.logger.info(f"Number of params: {n_parameters}")
 
         if self._cfg.model.weights:
+            self.logger.info(f"Loading weights from {cfg.model.weights}")
             state_dict = self._tracker.get_state_dict(self._cfg.model.weights)
             state_dict = self.prepare_pretrained_model(self._cfg.model.type, model.state_dict(), state_dict)
             model.load_state_dict(state_dict)
+            self.logger.info(f"Model weights loaded!")
 
         model.cuda()
         model_wo_ddp = model
