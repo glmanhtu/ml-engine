@@ -27,7 +27,8 @@ class MLFlowTracker(Tracker):
                  rank: Optional[int] = None,
                  artifact_location: Optional[str] = None,
                  tags: Optional[Dict[str, Any]] = None,
-                 synchronous=True):
+                 synchronous=True,
+                 enabled: bool = True):
 
         mlflow.set_tracking_uri(tracking_uri)
         self.rank = rank
@@ -38,6 +39,7 @@ class MLFlowTracker(Tracker):
         self.run: Union[ActiveRun, None] = None
         self.client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
         self.synchronous = synchronous
+        self.enabled = enabled
 
     def start_tracking(self, run_id: Optional[str] = None,
                        run_name: Optional[str] = None, nested: bool = False, tags: Optional[Dict[str, Any]] = None,
@@ -54,6 +56,8 @@ class MLFlowTracker(Tracker):
         return self.run
 
     def should_monitor(self):
+        if not self.enabled:
+            return False
         if self.rank is not None:
             if self.rank != dist.get_rank():
                 return False
