@@ -31,7 +31,7 @@ class MLFlowTracker(Tracker):
                  tags: Optional[Dict[str, Any]] = None,
                  synchronous=True,
                  enabled: bool = True,
-                 save_model_to_disk: bool = False,
+                 save_artifact_to_disk: bool = False,
                  local_artifact_dir: str = ''):
 
         mlflow.set_tracking_uri(tracking_uri)
@@ -44,7 +44,7 @@ class MLFlowTracker(Tracker):
         self.client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
         self.synchronous = synchronous
         self.enabled = enabled
-        self.save_artifact_to_disk = save_model_to_disk
+        self.save_artifact_to_disk = save_artifact_to_disk
         self.local_artifact_dir = local_artifact_dir
 
     def start_tracking(self, run_id: Optional[str] = None,
