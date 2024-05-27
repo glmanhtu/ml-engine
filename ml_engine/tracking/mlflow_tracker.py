@@ -1,3 +1,4 @@
+import shutil
 import tempfile
 from typing import Any, Dict, Union, Optional, TYPE_CHECKING
 import os
@@ -31,7 +32,7 @@ class MLFlowTracker(Tracker):
                  synchronous=True,
                  enabled: bool = True,
                  save_model_to_disk: bool = False,
-                 local_model_dir: str = ''):
+                 local_artifact_dir: str = ''):
 
         mlflow.set_tracking_uri(tracking_uri)
         self.rank = rank
@@ -43,8 +44,8 @@ class MLFlowTracker(Tracker):
         self.client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
         self.synchronous = synchronous
         self.enabled = enabled
-        self.save_model_to_disk = save_model_to_disk
-        self.local_model_dir = local_model_dir
+        self.save_artifact_to_disk = save_model_to_disk
+        self.local_artifact_dir = local_artifact_dir
 
     def start_tracking(self, run_id: Optional[str] = None,
                        run_name: Optional[str] = None, nested: bool = False, tags: Optional[Dict[str, Any]] = None,
@@ -80,8 +81,8 @@ class MLFlowTracker(Tracker):
     def log_state_dict(self, state_dict, artifact_path):
         if not self.should_monitor():
             return
-        if self.save_model_to_disk:
-            model_dir = os.path.join(self.local_model_dir, artifact_path)
+        if self.save_artifact_to_disk:
+            model_dir = os.path.join(self.local_artifact_dir, artifact_path)
             os.makedirs(model_dir, exist_ok=True)
             torch.save(state_dict, os.path.join(model_dir, 'checkpoint.pth'))
         mlflow.pytorch.log_state_dict(state_dict, artifact_path)
@@ -148,11 +149,21 @@ class MLFlowTracker(Tracker):
         if not self.should_monitor():
             return
 
+        if self.save_artifact_to_disk:
+            artifact_dir = os.path.join(self.local_artifact_dir, artifact_path)
+            os.makedirs(artifact_dir, exist_ok=True)
+            shutil.copy2(local_file_path, artifact_dir)
+
         mlflow.log_artifact(local_file_path, artifact_path)
 
     def log_artifacts(self, local_dir: str, artifact_path: Optional[str] = None) -> None:
         if not self.should_monitor():
             return
+
+        if self.save_artifact_to_disk:
+            artifact_dir = os.path.join(self.local_artifact_dir, artifact_path)
+            os.makedirs(artifact_dir, exist_ok=True)
+            shutil.copytree(local_dir, artifact_dir, dirs_exist_ok=True)
 
         mlflow.log_artifacts(local_dir, artifact_path)
 
