@@ -6,6 +6,7 @@ import PIL.Image
 import mlflow
 import numpy as np
 import pandas as pd
+import torch
 from mlflow import ActiveRun
 
 from ml_engine.tracking.tracker import Tracker
@@ -23,7 +24,9 @@ class MLFlowTracker(Tracker):
                  tracking_uri: str,
                  artifact_location: Optional[str] = None,
                  tags: Optional[Dict[str, Any]] = None,
-                 synchronous=True):
+                 synchronous=True,
+                 save_model_to_disk: bool = False,
+                 local_model_dir: str = ''):
 
         mlflow.set_tracking_uri(tracking_uri)
         exp = mlflow.get_experiment_by_name(name)
@@ -35,6 +38,8 @@ class MLFlowTracker(Tracker):
         self.run: Union[ActiveRun, None] = None
         self.client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
         self.synchronous = synchronous
+        self.save_model_to_disk = save_model_to_disk
+        self.local_model_dir = local_model_dir
 
     def start_tracking(self, run_id: Optional[str] = None,
                        run_name: Optional[str] = None, nested: bool = False, tags: Optional[Dict[str, Any]] = None,
@@ -52,6 +57,10 @@ class MLFlowTracker(Tracker):
         return mlflow.pytorch.load_state_dict(artifact_path)
 
     def log_state_dict(self, state_dict, artifact_path):
+        if self.save_model_to_disk:
+            model_dir = os.path.join(self.local_model_dir, artifact_path)
+            os.makedirs(model_dir, exist_ok=True)
+            torch.save(state_dict, os.path.join(model_dir, 'checkpoint.pth'))
         mlflow.pytorch.log_state_dict(state_dict, artifact_path)
 
     def log_metrics(self, metrics: Dict[str, float], step: int, synchronous: Union[bool, None] = None) -> None:
