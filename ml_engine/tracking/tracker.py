@@ -22,6 +22,9 @@ class Tracker(object):
                        log_system_metrics: Optional[bool] = None):
         raise NotImplementedError()
 
+    def should_monitor(self):
+        raise NotImplementedError()
+
     def stop_tracking(self):
         raise NotImplementedError()
 
@@ -68,4 +71,7 @@ class Tracker(object):
         raise NotImplementedError()
 
     def log_model(self, model, artifact_path: str, signature=None):
+        raise NotImplementedError()
+
+    def log_table_as_csv(self, data: pd.DataFrame, artifact_path: str, filename: str):
         raise NotImplementedError()

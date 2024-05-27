@@ -142,6 +142,9 @@ def get_ddp_config():
         os.environ['MASTER_PORT'] = str(random.randint(10000, 65000))
 
     torch.cuda.set_device(local_rank)
+    if dist.is_initialized():
+        torch.distributed.barrier()
+        dist.destroy_process_group()
     torch.distributed.init_process_group(backend='nccl', init_method='env://', world_size=world_size, rank=rank)
     torch.distributed.barrier()
     return local_rank, rank, world_size
@@ -248,3 +251,10 @@ def revert_sync_batchnorm(module):
     return module_output
 
 
+class EmptyContext:
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return True

@@ -1,6 +1,7 @@
 import datetime
 import os
 import time
+from functools import lru_cache
 from typing import Dict
 
 import timm
@@ -9,14 +10,14 @@ import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 from omegaconf import DictConfig
 from torch.nn.parallel import DistributedDataParallel
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, DistributedSampler
 
 from ml_engine import utils
-from ml_engine.data.samplers import DistributedRepeatableSampler, DistributedRepeatableEvalSampler
+from ml_engine.data.samplers import DistributedRepeatableEvalSampler
 from ml_engine.evaluation.metrics import AverageMeter
 from ml_engine.logger import create_logger
 from ml_engine.lr_scheduler import build_scheduler
-from ml_engine.modelling.resnet import ResNetWrapper, ResNet32MixConv
+from ml_engine.modelling.resnet import ResNet32MixConv
 from ml_engine.modelling.simsiam import SimSiamV2CE, SimSiamV2
 from ml_engine.optimizer import build_optimizer
 from ml_engine.tracking.tracker import Tracker
@@ -44,10 +45,12 @@ class Trainer:
         n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
         self.logger.info(f"Number of params: {n_parameters}")
 
-        if self._cfg.model.pretrained:
-            state_dict = self._tracker.get_state_dict(self._cfg.model.pretrained)
+        if self._cfg.model.weights:
+            self.logger.info(f"Loading weights from {cfg.model.weights}")
+            state_dict = self._tracker.get_state_dict(self._cfg.model.weights)
             state_dict = self.prepare_pretrained_model(self._cfg.model.type, model.state_dict(), state_dict)
             model.load_state_dict(state_dict)
+            self.logger.info(f"Model weights loaded!")
 
         model.cuda()
         model_wo_ddp = model
@@ -57,7 +60,6 @@ class Trainer:
         self._model = model
         self._model_wo_ddp = model_wo_ddp
         self.__step = 0
-        self.data_loader_registers = {}
 
     def prepare_pretrained_model(self, model_type, model_state_dict, pretrained_state_dict):
         """
@@ -85,7 +87,7 @@ class Trainer:
         if model_conf.type == 'ss2ce':
             model = SimSiamV2CE(
                 arch=model_conf.arch,
-                pretrained=model_conf.weights,
+                pretrained=model_conf.pretrained,
                 dim=model_conf.embed_dim,
                 pred_dim=model_conf.pred_dim,
                 dropout=model_conf.dropout,
@@ -94,16 +96,10 @@ class Trainer:
         elif model_conf.type == 'ss2':
             model = SimSiamV2(
                 arch=model_conf.arch,
-                pretrained=model_conf.weights,
+                pretrained=model_conf.pretrained,
                 dim=model_conf.embed_dim,
                 pred_dim=model_conf.pred_dim,
                 dropout=model_conf.dropout)
-
-        elif model_conf.type == 'resnet':
-            model = ResNetWrapper(
-                backbone=model_conf.arch,
-                weights=model_conf.weights,
-                layers_to_freeze=model_conf.layers_freeze)
 
         elif model_conf.type == 'mixconv':
             model = ResNet32MixConv(
@@ -112,13 +108,13 @@ class Trainer:
                 out_channels=model_conf.out_channels,
                 mix_depth=model_conf.mix_depth,
                 out_rows=model_conf.out_rows,
-                weights=model_conf.weights,
+                weights=model_conf.pretrained,
                 layers_to_freeze=model_conf.layers_freeze)
 
         else:
-            timm_models = timm.list_models(pretrained=True)
+            timm_models = timm.list_models(pretrained=model_conf.pretrained)
             if model_conf.arch in timm_models:
-                return timm.create_model(model_conf.arch, pretrained=model_conf.weights,
+                return timm.create_model(model_conf.arch, pretrained=model_conf.pretrained,
                                          num_classes=model_conf.num_classes)
             raise NotImplementedError(f'Network {model_conf.type} is not implemented!')
 
@@ -131,16 +127,13 @@ class Trainer:
     def load_dataset(self, mode, data_conf, transform):
         raise NotImplementedError()
 
+    @lru_cache
     def get_dataloader(self, mode, dataset, data_conf):
-        if mode in self.data_loader_registers:
-            return self.data_loader_registers[mode]
-
         num_tasks = self.world_size
         global_rank = self.rank
+        sampler = DistributedRepeatableEvalSampler(dataset, shuffle=False, rank=global_rank, num_replicas=num_tasks)
         if mode == 'train':
-            sampler = DistributedRepeatableSampler(
-                dataset, num_replicas=num_tasks, rank=global_rank, shuffle=True, repeat=1)
-
+            sampler = DistributedSampler(dataset, num_replicas=num_tasks, rank=global_rank, shuffle=True)
             data_loader = DataLoader(
                 dataset, sampler=sampler,
                 batch_size=data_conf.batch_size,
@@ -149,9 +142,6 @@ class Trainer:
                 drop_last=True,
             )
         else:
-            sampler = DistributedRepeatableEvalSampler(dataset, shuffle=False, rank=global_rank, num_replicas=num_tasks,
-                                                       repeat=1)
-
             data_loader = torch.utils.data.DataLoader(
                 dataset, sampler=sampler,
                 batch_size=data_conf.test_batch_size,
@@ -160,7 +150,6 @@ class Trainer:
                 pin_memory=data_conf.pin_memory,
                 drop_last=False
             )
-        self.data_loader_registers[mode] = data_loader
         return data_loader
 
     def train(self, ref_lr_bs=256., mode='train'):
@@ -171,6 +160,7 @@ class Trainer:
         else:
             self._tracker.log_params(extract_params_from_omegaconf_dict(self._cfg))
         dataset = self.load_dataset(mode, self._cfg.data, self.get_transform(mode, self._cfg.data))
+        self.logger.info(f"Training data size: {len(dataset)}")
         data_loader = self.get_dataloader(mode, dataset, self._cfg.data)
 
         # linear scale the learning rate according to total batch size, may not be optimal
@@ -252,7 +242,9 @@ class Trainer:
     def train_one_epoch(self, epoch, data_loader, optimizer, lr_scheduler, loss_scaler, criterion):
         self._model.train()
         optimizer.zero_grad()
-        data_loader.sampler.set_epoch(epoch)
+        set_epoch_op = getattr(data_loader.sampler, "set_epoch", None)
+        if callable(set_epoch_op):
+            set_epoch_op(epoch)
         batch_time = AverageMeter()
         loss_meter, norm_meter, scaler_meter = AverageMeter(), AverageMeter(), AverageMeter()
 
@@ -325,6 +317,8 @@ class Trainer:
     def validate(self, mode='validation'):
         self._model.eval()
         dataset = self.load_dataset(mode, self._cfg.data, self.get_transform(mode, self._cfg.data))
+        self.logger.info(f"Validating data size: {len(dataset)}")
+
         data_loader = self.get_dataloader(mode, dataset, self._cfg.data)
         return self.validate_one_epoch(data_loader)
 
@@ -347,3 +341,8 @@ class Trainer:
             throughput_val = 30 * batch_size / (tic2 - tic1)
             self.logger.info(f"batch_size {batch_size} throughput {throughput_val}")
             return throughput_val
+
+    def __del__(self):
+        if dist.is_initialized():
+            torch.distributed.barrier()
+            dist.destroy_process_group()
