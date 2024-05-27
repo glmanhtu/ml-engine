@@ -73,6 +73,11 @@ class MLFlowTracker(Tracker):
         mlflow.end_run()
 
     def get_state_dict(self, artifact_path):
+        if self.save_artifact_to_disk:
+            model_path = os.path.join(self.local_artifact_dir, artifact_path, 'checkpoint.pth')
+            if os.path.exists(model_path):
+                return torch.load(model_path)
+
         parsed_path = urlparse(artifact_path)
         if not parsed_path.scheme:
             artifact_path = mlflow.get_artifact_uri(artifact_path)
