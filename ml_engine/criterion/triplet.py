@@ -6,9 +6,10 @@ from ml_engine.utils import get_combinations
 
 class BatchWiseTripletDistanceLoss(torch.nn.Module):
 
-    def __init__(self, distance_fn, margin=0.15, reduction='mean'):
+    def __init__(self, distance_fn, margin=0.15, reduction='mean', device='cuda'):
         super().__init__()
         self.margin = margin
+        self.device = device
         self.loss_fn = torch.nn.TripletMarginWithDistanceLoss(margin=margin,
                                                               distance_function=distance_fn,
                                                               reduction=reduction)
@@ -16,7 +17,7 @@ class BatchWiseTripletDistanceLoss(torch.nn.Module):
     def forward(self, samples, targets):
         n = samples.size(0)
         # split the positive and negative pairs
-        eyes_ = torch.eye(n, dtype=torch.bool).cuda()
+        eyes_ = torch.eye(n, dtype=torch.bool).to(self.device)
         pos_mask = targets.expand(
             targets.shape[0], n
         ).t() == targets.expand(n, targets.shape[0])
@@ -61,9 +62,10 @@ class BatchWiseTripletLoss(torch.nn.Module):
     Adapted from https://github.com/marco-peer/hip23
     Triplet loss with negative similarity as distance function
     """
-    def __init__(self, margin=0.1):
+    def __init__(self, margin=0.1, device='cuda'):
         super(BatchWiseTripletLoss, self).__init__()
         self.margin = margin
+        self.device = device
 
     def forward(self, emb, target):
         emb = F.normalize(emb, p=2, dim=-1)
@@ -74,7 +76,7 @@ class BatchWiseTripletLoss(torch.nn.Module):
         # Compute similarity matrix
         sim_mat = torch.matmul(inputs_col, inputs_row.t())
         # split the positive and negative pairs
-        eyes_ = torch.eye(n, dtype=torch.bool).cuda()
+        eyes_ = torch.eye(n, dtype=torch.bool).to(self.device)
         pos_mask = targets_col.expand(
             targets_row.shape[0], n
         ).t() == targets_row.expand(n, targets_row.shape[0])

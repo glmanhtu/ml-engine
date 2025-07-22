@@ -119,7 +119,7 @@ def set_seed(seed):
     random.seed(seed)
 
 
-def get_ddp_config():
+def get_ddp_config(device):
     local_rank, rank, world_size = 0, 0, 1
 
     if 'RANK' in os.environ:
@@ -140,6 +140,9 @@ def get_ddp_config():
 
     if 'MASTER_PORT' not in os.environ:
         os.environ['MASTER_PORT'] = str(random.randint(10000, 65000))
+
+    if device == 'cpu':
+        return local_rank, rank, world_size
 
     torch.cuda.set_device(local_rank)
     if dist.is_initialized():

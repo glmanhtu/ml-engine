@@ -73,6 +73,8 @@ class MLFlowTracker(Tracker):
         mlflow.end_run()
 
     def get_state_dict(self, artifact_path):
+        if os.path.exists(artifact_path):
+            return torch.load(artifact_path, map_location='cpu')
         if self.save_artifact_to_disk:
             model_path = os.path.join(self.local_artifact_dir, artifact_path, 'checkpoint.pth')
             if os.path.exists(model_path):

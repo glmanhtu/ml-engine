@@ -26,10 +26,11 @@ from ml_engine.utils import get_ddp_config, NativeScalerWithGradNormCount, extra
 
 
 class Trainer:
-    def __init__(self, cfg: DictConfig, tracker: Tracker):
+    def __init__(self, cfg: DictConfig, tracker: Tracker, device='cuda'):
         self._cfg = cfg
         self._tracker = tracker
-        self.local_rank, self.rank, self.world_size = get_ddp_config()
+        self.device = torch.device(device)
+        self.local_rank, self.rank, self.world_size = get_ddp_config(device)
         exp_log_dir = os.path.join(cfg.log_dir, cfg.run.name)
         os.makedirs(exp_log_dir, exist_ok=True)
         self.logger = create_logger(exp_log_dir, self.rank, cfg.run.name, cfg.mode)
@@ -52,9 +53,10 @@ class Trainer:
             model.load_state_dict(state_dict)
             self.logger.info(f"Model weights loaded!")
 
-        model.cuda()
+        model.to(device)
         model_wo_ddp = model
-        model = DistributedDataParallel(model, device_ids=[self.local_rank], broadcast_buffers=False)
+        if device != 'cpu':
+            model = DistributedDataParallel(model, device_ids=[self.local_rank], broadcast_buffers=False)
 
         self._min_loss = 99999
         self._model = model
@@ -164,7 +166,7 @@ class Trainer:
         data_loader = self.get_dataloader(mode, dataset, self._cfg.data)
 
         # linear scale the learning rate according to total batch size, may not be optimal
-        batch_size = self._cfg.data.batch_size * dist.get_world_size()
+        batch_size = self._cfg.data.batch_size * self.world_size
         self._cfg.train.base_lr = self._cfg.train.base_lr * batch_size / ref_lr_bs
         self._cfg.lr_scheduler.warmup_lr = self._cfg.lr_scheduler.warmup_lr * batch_size / ref_lr_bs
         self._cfg.lr_scheduler.min_lr = self._cfg.lr_scheduler.min_lr * batch_size / ref_lr_bs
@@ -251,8 +253,8 @@ class Trainer:
         start = time.time()
         end = time.time()
         for idx, (samples, targets) in enumerate(data_loader):
-            samples = samples.cuda(non_blocking=True)
-            targets = targets.cuda(non_blocking=True)
+            samples = samples.to(self.device, non_blocking=True)
+            targets = targets.to(self.device, non_blocking=True)
 
             samples, targets = self.prepare_data(samples, targets)
             with torch.cuda.amp.autocast(enabled=self._cfg.amp_enable):
@@ -270,9 +272,12 @@ class Trainer:
             if (idx + 1) % self._cfg.train.accumulation_steps == 0:
                 optimizer.zero_grad()
                 lr_scheduler.step_update((epoch * len(data_loader) + idx) // self._cfg.train.accumulation_steps)
-            loss_scale_value = loss_scaler.state_dict()["scale"]
+            if self.device.type == 'cuda':
+                loss_scale_value = loss_scaler.state_dict()["scale"]
+                torch.cuda.synchronize()
+            else:
+                loss_scale_value = 1.0
 
-            torch.cuda.synchronize()
 
             loss_meter.update(loss.item() * self._cfg.train.accumulation_steps, targets.size(0))
             if grad_norm is not None:  # loss_scaler return None if not update
@@ -285,7 +290,9 @@ class Trainer:
             if idx % self._cfg.print_freq == 0:
                 lr = optimizer.param_groups[0]['lr']
                 wd = optimizer.param_groups[0]['weight_decay']
-                memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
+                memory_used = 0
+                if self.device.type == 'cuda':
+                    memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
                 etas = batch_time.avg * (len(data_loader) - idx)
                 self.logger.info(
                     f'Train: [{epoch}/{self._cfg.train.epochs}][{idx}/{len(data_loader)}]\t'
